@@ -163,12 +163,44 @@ To ship in 24 hours, we made these conscious tradeoffs:
 
 ## Future Improvements
 
+- [x] Speed-adaptive warnings based on GPS
+- [x] Priority-based alert system
+- [x] Hazard bounding box overlays
+- [x] Settings screen for customization
+- [x] Enhanced colorblindness support (protanomaly, deuteranomaly)
 - [ ] YOLO object detection for better accuracy
 - [ ] Pedestrian signal detection (walk/don't walk)
+- [ ] Brake light detection
+- [ ] Emergency vehicle detection
 - [ ] Flashing signal detection
-- [ ] Persistent user preferences
+- [ ] Persistent user preferences (AsyncStorage)
 - [ ] Apple Watch / WearOS companion app
 - [ ] Haptic feedback option
+- [ ] TensorFlow.js on-device inference
+
+## New in v1.1: ColorGuard Features
+
+### Speed-Adaptive Warnings
+- GPS-based speed tracking
+- Automatically adjusts capture rate and warning distance
+- Transit modes: Stationary, Walking, Biking, Driving
+
+### Priority Alert System
+- Critical, High, Medium, Low priority levels
+- Interruption capability for critical alerts
+- Smart cooldown to prevent alert spam
+
+### Hazard Detection
+- Traffic light color state detection
+- Stop sign detection
+- Brake light detection (planned)
+- Emergency vehicle detection (planned)
+
+### Enhanced UI
+- Real-time hazard bounding boxes
+- Speed indicator overlay
+- Audio toggle button
+- Settings screen
 
 ## License
 

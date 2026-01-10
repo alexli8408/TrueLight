@@ -67,8 +67,12 @@ export default function CameraScreen() {
   };
 
   const handleSettings = () => {
-    Alert.alert("Settings", "Would you like to retake the vision test?", [
+    Alert.alert("Settings", "What would you like to do?", [
       { text: "Cancel", style: "cancel" },
+      {
+        text: "Open Settings",
+        onPress: () => router.push("/settings"),
+      },
       {
         text: "Retake Test",
         onPress: () => router.replace("/test"),

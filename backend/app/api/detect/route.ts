@@ -5,11 +5,13 @@ import { detectSignal, DetectionResult } from '@/lib/detection';
  * POST /api/detect
  *
  * Accepts a base64-encoded image and returns traffic signal detection results.
+ * Optionally includes full hazard detection with YOLO.
  *
  * Request body:
  * {
  *   "image": "base64-encoded-image-data",
  *   "debug": boolean (optional) - include debug info in response
+ *   "detectHazards": boolean (optional) - include full hazard detection
  * }
  *
  * Response:
@@ -17,7 +19,8 @@ import { detectSignal, DetectionResult } from '@/lib/detection';
  *   "state": "red" | "yellow" | "green" | "flashing" | "unknown",
  *   "confidence": 0-1,
  *   "message": "Human-readable message for TTS",
- *   "debug": { ... } (if requested)
+ *   "hazards": [...] (if detectHazards=true),
+ *   "debug": { ... } (if debug=true)
  * }
  */
 export async function POST(request: NextRequest) {
@@ -32,10 +35,12 @@ export async function POST(request: NextRequest) {
     }
 
     const startTime = Date.now();
-    const result = await detectSignal(body.image);
+    const result = await detectSignal(body.image, {
+      detectHazards: body.detectHazards || false,
+    });
     const processingTime = Date.now() - startTime;
 
-    // Remove debug info unless explicitly requested
+    // Build response
     const response: DetectionResult & { processingTimeMs?: number } = {
       state: result.state,
       confidence: result.confidence,
@@ -43,6 +48,17 @@ export async function POST(request: NextRequest) {
       processingTimeMs: processingTime,
     };
 
+    // Include hazards if requested and present
+    if (body.detectHazards && result.hazards) {
+      response.hazards = result.hazards;
+    }
+
+    // Include bounding box if available
+    if (result.bbox) {
+      response.bbox = result.bbox;
+    }
+
+    // Include debug info if requested
     if (body.debug) {
       response.debug = result.debug;
     }
@@ -63,5 +79,15 @@ export async function GET() {
     endpoint: '/api/detect',
     method: 'POST',
     description: 'Send a base64-encoded image to detect traffic signal state',
+    options: {
+      debug: 'Include debug information in response',
+      detectHazards: 'Include full YOLO-based hazard detection',
+    },
+    relatedEndpoints: [
+      '/api/detect/yolo - YOLO object detection',
+      '/api/detect/color - Traffic light color analysis',
+      '/api/detect/brake-lights - Brake light detection',
+      '/api/detect/emergency-lights - Emergency vehicle detection',
+    ],
   });
 }

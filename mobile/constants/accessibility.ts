@@ -51,16 +51,35 @@ export const SIZES = {
 
 export const TIMING = {
   // Frame capture interval (ms) - balance between responsiveness and battery
+  // These are adjusted based on movement mode in the speed service
   captureInterval: 800,
+  captureIntervalDriving: 400,
+  captureIntervalCycling: 600,
+  captureIntervalWalking: 800,
+  captureIntervalStationary: 1000,
 
   // Debounce for audio announcements (ms) - avoid repeating same state
   audioDebounce: 2000,
+  audioDebounceDriverMode: 1500,
+  audioDebounceCyclingMode: 2000,
+  audioDebounceWalkingMode: 3000,
 
   // Minimum confidence to announce (0-1)
   minConfidenceToAnnounce: 0.3,
+  minConfidenceYOLO: 0.5,
 
   // API timeout (ms)
   apiTimeout: 5000,
+
+  // YOLO detection specific timing
+  yoloTimeout: 3000,
+  colorAnalysisTimeout: 2000,
+
+  // Hazard announcement cooldown (ms)
+  hazardCooldown: 5000,
+
+  // ElevenLabs pre-cache timeout
+  elevenLabsCacheTimeout: 30000,
 };
 
 export type SignalState = 'red' | 'yellow' | 'green' | 'flashing' | 'unknown';
@@ -72,15 +91,19 @@ export type SignalState = 'red' | 'yellow' | 'green' | 'flashing' | 'unknown';
  * - Protanopia: Red-blind (difficulty distinguishing red)
  * - Deuteranopia: Green-blind (difficulty distinguishing green)
  * - Tritanopia: Blue-blind (rare, difficulty with blue/yellow)
+ * - Protanomaly: Red-weak (partial red deficiency)
+ * - Deuteranomaly: Green-weak (partial green deficiency)
  * - Normal: No color vision deficiency
  * - Low Vision: General low vision, relies primarily on audio
  */
 export type ColorblindnessType =
   | 'normal'
-  | 'protanopia'    // Red-blind
-  | 'deuteranopia'  // Green-blind
-  | 'tritanopia'    // Blue-yellow blind
-  | 'low_vision'    // Relies on audio
+  | 'protanopia'     // Red-blind
+  | 'deuteranopia'   // Green-blind
+  | 'tritanopia'     // Blue-yellow blind
+  | 'protanomaly'    // Red-weak
+  | 'deuteranomaly'  // Green-weak
+  | 'low_vision'     // Relies on audio
   | 'unknown';
 
 /**
@@ -161,3 +184,81 @@ export const getColorblindAdjustments = (type: ColorblindnessType) => {
       };
   }
 };
+
+/**
+ * Hazard types that can be detected
+ */
+export type HazardType =
+  | 'brake_lights'
+  | 'stop_sign'
+  | 'emergency_vehicle'
+  | 'pedestrian'
+  | 'cyclist';
+
+/**
+ * Detection class types from YOLO
+ */
+export type DetectionClass =
+  | 'car'
+  | 'truck'
+  | 'bus'
+  | 'motorcycle'
+  | 'bicycle'
+  | 'person'
+  | 'traffic_light'
+  | 'stop_sign';
+
+/**
+ * Hazard messages for audio announcements
+ */
+export const getHazardMessage = (
+  hazardType: HazardType,
+  colorblindType: ColorblindnessType
+): string => {
+  const messages: Record<HazardType, { standard: string; enhanced: string }> = {
+    brake_lights: {
+      standard: 'Brake lights ahead.',
+      enhanced: 'Warning. Brake lights ahead. Slow down.',
+    },
+    stop_sign: {
+      standard: 'Stop sign ahead.',
+      enhanced: 'Stop sign ahead. Come to a complete stop.',
+    },
+    emergency_vehicle: {
+      standard: 'Emergency vehicle.',
+      enhanced: 'Emergency vehicle approaching. Pull over safely.',
+    },
+    pedestrian: {
+      standard: 'Pedestrian detected.',
+      enhanced: 'Pedestrian ahead. Use caution.',
+    },
+    cyclist: {
+      standard: 'Cyclist ahead.',
+      enhanced: 'Cyclist detected. Maintain safe distance.',
+    },
+  };
+
+  const needsEnhanced =
+    colorblindType === 'protanopia' ||
+    colorblindType === 'deuteranopia' ||
+    colorblindType === 'low_vision';
+
+  return needsEnhanced
+    ? messages[hazardType].enhanced
+    : messages[hazardType].standard;
+};
+
+/**
+ * Priority levels for different detection types
+ */
+export const DETECTION_PRIORITY = {
+  emergency_vehicle: 1,   // Highest priority
+  red_light: 2,
+  stop_sign: 3,
+  brake_lights: 4,
+  yellow_light: 5,
+  pedestrian: 6,
+  cyclist: 7,
+  green_light: 8,
+  vehicle: 9,             // Lowest priority
+} as const;
