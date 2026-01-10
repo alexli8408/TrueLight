@@ -1,52 +1,89 @@
 /**
  * Welcome/Onboarding Screen
  *
- * Entry point that either:
- * - Shows onboarding for first-time users
- * - Redirects to main app for returning users
+ * Users can select their colorblindness type directly or take a test
  */
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
-import { useRouter, Redirect } from "expo-router";
+import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { COLORS, SIZES } from "../constants/accessibility";
-import { useAppStore } from "../store/useAppStore";
+import { COLORS, SIZES, ColorblindnessType } from "../constants/accessibility";
+import {
+  getColorblindType,
+  setColorblindType,
+  completeOnboarding,
+} from "../services/storage";
 import { speak } from "../services/speech";
+
+type SelectableType = Exclude<ColorblindnessType, "unknown">;
+
+const VISION_TYPES: {
+  type: SelectableType;
+  label: string;
+  description: string;
+}[] = [
+  {
+    type: "normal",
+    label: "Normal Vision",
+    description: "No color vision deficiency",
+  },
+  {
+    type: "protanopia",
+    label: "Protanopia",
+    description: "Difficulty seeing red",
+  },
+  {
+    type: "deuteranopia",
+    label: "Deuteranopia",
+    description: "Difficulty seeing green",
+  },
+  {
+    type: "tritanopia",
+    label: "Tritanopia",
+    description: "Difficulty seeing blue/yellow",
+  },
+  {
+    type: "low_vision",
+    label: "Low Vision",
+    description: "Prefer full audio descriptions",
+  },
+];
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const { hasCompletedOnboarding, setOnboardingComplete, setColorVisionProfile } =
-    useAppStore();
+  const [selectedType, setSelectedType] =
+    useState<ColorblindnessType>("unknown");
 
-  // If user has completed onboarding, redirect to main app
-  if (hasCompletedOnboarding) {
-    return <Redirect href="/(tabs)/dashcam" />;
-  }
+  useEffect(() => {
+    const savedType = getColorblindType();
+    if (savedType && savedType !== "unknown") {
+      setSelectedType(savedType);
+    }
+  }, []);
 
-  const handleGetStarted = () => {
-    speak("Let's set up Delta for you.");
-    router.push("/(tabs)/profile/test");
+  const handleSelectType = (type: SelectableType) => {
+    setSelectedType(type);
+    setColorblindType(type);
+    completeOnboarding();
+    speak(getVisionTypeLabel(type) + " selected");
   };
 
-  const handleSkip = () => {
-    // Set to low vision mode for maximum assistance
-    setColorVisionProfile({
-      type: "low_vision",
-      severity: "moderate",
-      confidence: 0.5,
-      testDate: null,
-      problematicColors: {
-        red: true,
-        green: true,
-        blue: true,
-        yellow: true,
-      },
-    });
-    setOnboardingComplete(true);
-    speak("Using enhanced audio mode for maximum assistance.");
-    router.replace("/(tabs)/dashcam");
+  const handleTakeTest = () => {
+    speak("Starting color vision assessment");
+    router.push("/test");
   };
+
+  const handleStartCamera = () => {
+    if (selectedType === "unknown") {
+      speak("Please select your vision type first");
+      return;
+    }
+    speak("Starting traffic signal detection");
+    router.push("/camera");
+  };
+
+  const hasSelection = selectedType !== "unknown";
 
   return (
     <SafeAreaView style={styles.container}>
@@ -54,107 +91,112 @@ export default function WelcomeScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Logo/Title */}
         <View style={styles.header}>
-          <Text style={styles.logo}>DELTA</Text>
-          <Text style={styles.tagline}>Your Eyes on the Road</Text>
+          <Text style={styles.title}>TrueLight</Text>
+          <Text style={styles.subtitle}>Traffic Signal Assistant</Text>
         </View>
 
-        {/* Description */}
-        <View style={styles.descriptionContainer}>
-          <Text style={styles.description}>
-            Delta is a dashcam app designed for people with color blindness and
-            visual impairments.
-          </Text>
+        <Text style={styles.sectionTitle}>Select your vision type</Text>
 
-          <View style={styles.featureList}>
-            <FeatureItem
-              icon="C"
-              title="Smart Detection"
-              description="Identifies traffic signals, stop signs, brake lights, and more"
-            />
-            <FeatureItem
-              icon="V"
-              title="Voice Alerts"
-              description="Clear audio notifications for hazards you might miss"
-            />
-            <FeatureItem
-              icon="P"
-              title="Personalized"
-              description="Adapts to your specific color vision needs"
-            />
-            <FeatureItem
-              icon="M"
-              title="Multi-Mode"
-              description="Works for driving, biking, walking, and more"
-            />
-          </View>
+        <View style={styles.optionsContainer}>
+          {VISION_TYPES.map(({ type, label, description }) => (
+            <Pressable
+              key={type}
+              style={[
+                styles.optionButton,
+                selectedType === type && styles.optionButtonSelected,
+              ]}
+              onPress={() => handleSelectType(type)}
+              accessibilityRole="button"
+              accessibilityLabel={`${label}: ${description}`}
+              accessibilityState={{ selected: selectedType === type }}
+            >
+              <View style={styles.optionContent}>
+                <Text
+                  style={[
+                    styles.optionLabel,
+                    selectedType === type && styles.optionLabelSelected,
+                  ]}
+                >
+                  {label}
+                </Text>
+                <Text
+                  style={[
+                    styles.optionDescription,
+                    selectedType === type && styles.optionDescriptionSelected,
+                  ]}
+                >
+                  {description}
+                </Text>
+              </View>
+              {selectedType === type && (
+                <View style={styles.checkmark}>
+                  <Text style={styles.checkmarkText}>✓</Text>
+                </View>
+              )}
+            </Pressable>
+          ))}
         </View>
 
-        {/* Quick Vision Test Prompt */}
-        <View style={styles.testPrompt}>
-          <Text style={styles.testPromptTitle}>
-            Quick Color Vision Assessment
-          </Text>
-          <Text style={styles.testPromptText}>
-            Take a 1-2 minute test to help us customize alerts for your vision.
-            This isn't a medical diagnosis — it helps personalize your
-            experience.
-          </Text>
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
         </View>
 
-        {/* Action Buttons */}
-        <View style={styles.buttonContainer}>
-          <Pressable
-            style={styles.primaryButton}
-            onPress={handleGetStarted}
-            accessibilityRole="button"
-            accessibilityLabel="Get started with vision test"
+        <Pressable
+          style={styles.testButton}
+          onPress={handleTakeTest}
+          accessibilityRole="button"
+          accessibilityLabel="Take a short vision test to determine your type"
+        >
+          <Text style={styles.testButtonText}>Not sure? Take a short test</Text>
+        </Pressable>
+
+        <View style={styles.spacer} />
+
+        <Pressable
+          style={[
+            styles.primaryButton,
+            !hasSelection && styles.primaryButtonDisabled,
+          ]}
+          onPress={handleStartCamera}
+          disabled={!hasSelection}
+          accessibilityRole="button"
+          accessibilityLabel="Start camera and begin detecting traffic signals"
+          accessibilityState={{ disabled: !hasSelection }}
+        >
+          <Text
+            style={[
+              styles.primaryButtonText,
+              !hasSelection && styles.primaryButtonTextDisabled,
+            ]}
           >
-            <Text style={styles.primaryButtonText}>GET STARTED</Text>
-          </Pressable>
+            Start Detection
+          </Text>
+        </Pressable>
 
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={handleSkip}
-            accessibilityRole="button"
-            accessibilityLabel="Skip test and use enhanced audio mode"
-          >
-            <Text style={styles.secondaryButtonText}>
-              Skip & Use Enhanced Audio
-            </Text>
-          </Pressable>
-        </View>
-
-        {/* Footer */}
-        <Text style={styles.footer}>
-          Your data stays on your device. No account required.
-        </Text>
+        <Text style={styles.footer}>Your data stays on your device</Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function FeatureItem({
-  icon,
-  title,
-  description,
-}: {
-  icon: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <View style={styles.featureItem}>
-      <View style={styles.featureIcon}>
-        <Text style={styles.featureIconText}>{icon}</Text>
-      </View>
-      <View style={styles.featureContent}>
-        <Text style={styles.featureTitle}>{title}</Text>
-        <Text style={styles.featureDescription}>{description}</Text>
-      </View>
-    </View>
-  );
+function getVisionTypeLabel(type: ColorblindnessType): string {
+  switch (type) {
+    case "normal":
+      return "Normal Vision";
+    case "protanopia":
+      return "Protanopia";
+    case "deuteranopia":
+      return "Deuteranopia";
+    case "tritanopia":
+      return "Tritanopia";
+    case "low_vision":
+      return "Low Vision";
+    default:
+      return "Unknown";
+  }
 }
 
 const styles = StyleSheet.create({
@@ -165,122 +207,130 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     padding: SIZES.spacingLarge,
-    justifyContent: "center",
+    paddingTop: 60,
   },
   header: {
-    alignItems: "center",
-    marginBottom: SIZES.spacingLarge * 2,
+    marginBottom: SIZES.spacingLarge * 1.5,
   },
-  logo: {
-    fontSize: 64,
-    fontWeight: "bold",
+  title: {
+    fontSize: SIZES.textXL,
+    fontWeight: "600",
     color: COLORS.textPrimary,
-    letterSpacing: 12,
+    letterSpacing: -1,
   },
-  tagline: {
+  subtitle: {
     fontSize: SIZES.textMedium,
-    color: COLORS.green,
-    marginTop: SIZES.spacingSmall,
-  },
-  descriptionContainer: {
-    marginBottom: SIZES.spacingLarge,
-  },
-  description: {
-    fontSize: SIZES.textSmall,
     color: COLORS.textSecondary,
-    textAlign: "center",
-    lineHeight: 24,
-    marginBottom: SIZES.spacingLarge,
+    marginTop: 4,
   },
-  featureList: {
-    gap: SIZES.spacingMedium,
+  sectionTitle: {
+    fontSize: SIZES.textMedium,
+    fontWeight: "600",
+    color: COLORS.textPrimary,
+    marginBottom: SIZES.spacingMedium,
   },
-  featureItem: {
+  optionsContainer: {
+    gap: SIZES.spacingSmall,
+  },
+  optionButton: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    backgroundColor: COLORS.backgroundSecondary,
-    padding: SIZES.spacingMedium,
-    borderRadius: SIZES.borderRadius,
-  },
-  featureIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.green,
     alignItems: "center",
-    justifyContent: "center",
-    marginRight: SIZES.spacingMedium,
-  },
-  featureIconText: {
-    color: COLORS.background,
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  featureContent: {
-    flex: 1,
-  },
-  featureTitle: {
-    fontSize: SIZES.textSmall,
-    fontWeight: "bold",
-    color: COLORS.textPrimary,
-    marginBottom: 2,
-  },
-  featureDescription: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    lineHeight: 20,
-  },
-  testPrompt: {
     backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: SIZES.borderRadius,
-    padding: SIZES.spacingLarge,
-    marginBottom: SIZES.spacingLarge,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.green,
-  },
-  testPromptTitle: {
-    fontSize: SIZES.textSmall,
-    fontWeight: "bold",
-    color: COLORS.textPrimary,
-    marginBottom: SIZES.spacingSmall,
-  },
-  testPromptText: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    lineHeight: 20,
-  },
-  buttonContainer: {
-    gap: SIZES.spacingMedium,
-    marginBottom: SIZES.spacingLarge,
-  },
-  primaryButton: {
-    backgroundColor: COLORS.green,
-    paddingVertical: SIZES.buttonPadding,
-    borderRadius: SIZES.borderRadius,
-    alignItems: "center",
-  },
-  primaryButtonText: {
-    color: COLORS.background,
-    fontSize: SIZES.textMedium,
-    fontWeight: "bold",
-    letterSpacing: 2,
-  },
-  secondaryButton: {
-    backgroundColor: "transparent",
-    paddingVertical: SIZES.buttonPadding,
+    paddingVertical: SIZES.spacingMedium,
+    paddingHorizontal: SIZES.spacingMedium,
     borderRadius: SIZES.borderRadius,
     borderWidth: 1,
     borderColor: COLORS.border,
+  },
+  optionButtonSelected: {
+    backgroundColor: COLORS.textPrimary,
+    borderColor: COLORS.textPrimary,
+  },
+  optionContent: {
+    flex: 1,
+  },
+  optionLabel: {
+    fontSize: SIZES.textSmall,
+    fontWeight: "600",
+    color: COLORS.textPrimary,
+  },
+  optionLabelSelected: {
+    color: COLORS.background,
+  },
+  optionDescription: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  optionDescriptionSelected: {
+    color: "rgba(255, 255, 255, 0.7)",
+  },
+  checkmark: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    justifyContent: "center",
     alignItems: "center",
   },
-  secondaryButtonText: {
+  checkmarkText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.textPrimary,
+  },
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: SIZES.spacingLarge,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+  dividerText: {
+    paddingHorizontal: SIZES.spacingMedium,
+    fontSize: SIZES.textSmall,
+    color: COLORS.textSecondary,
+  },
+  testButton: {
+    paddingVertical: SIZES.buttonPadding,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: SIZES.borderRadius,
+  },
+  testButtonText: {
     color: COLORS.textSecondary,
     fontSize: SIZES.textSmall,
   },
+  spacer: {
+    flex: 1,
+    minHeight: SIZES.spacingLarge,
+  },
+  primaryButton: {
+    backgroundColor: COLORS.buttonBackground,
+    paddingVertical: SIZES.buttonPadding,
+    paddingHorizontal: SIZES.spacingLarge,
+    borderRadius: SIZES.borderRadius,
+    alignItems: "center",
+  },
+  primaryButtonDisabled: {
+    backgroundColor: COLORS.border,
+  },
+  primaryButtonText: {
+    color: COLORS.buttonText,
+    fontSize: SIZES.textMedium,
+    fontWeight: "600",
+  },
+  primaryButtonTextDisabled: {
+    color: COLORS.textSecondary,
+  },
   footer: {
-    fontSize: 14,
+    fontSize: 13,
     color: COLORS.textSecondary,
     textAlign: "center",
+    marginTop: SIZES.spacingLarge,
     opacity: 0.6,
   },
 });
