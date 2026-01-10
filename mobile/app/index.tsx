@@ -92,7 +92,7 @@ export default function WelcomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>delta</Text>
+          <Text style={styles.title}>TrueLight</Text>
           <Text style={styles.subtitle}>Traffic Signal Assistant</Text>
         </View>
 

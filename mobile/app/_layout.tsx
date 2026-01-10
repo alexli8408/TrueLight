@@ -5,10 +5,10 @@
  * Uses dark theme for accessibility and reduced eye strain.
  */
 
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet } from 'react-native';
-import { COLORS } from '../constants/accessibility';
+import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { View, StyleSheet } from "react-native";
+import { COLORS } from "../constants/accessibility";
 
 export default function RootLayout() {
   return (
@@ -21,33 +21,33 @@ export default function RootLayout() {
           },
           headerTintColor: COLORS.textPrimary,
           headerTitleStyle: {
-            fontWeight: 'bold',
+            fontWeight: "bold",
             fontSize: 20,
           },
           contentStyle: {
             backgroundColor: COLORS.background,
           },
-          animation: 'fade',
+          animation: "fade",
         }}
       >
         <Stack.Screen
           name="index"
           options={{
-            title: 'Delta',
+            title: "TrueLight",
             headerShown: false,
           }}
         />
         <Stack.Screen
           name="test"
           options={{
-            title: 'Vision Test',
-            headerBackTitle: 'Back',
+            title: "Vision Test",
+            headerBackTitle: "Back",
           }}
         />
         <Stack.Screen
           name="camera"
           options={{
-            title: 'Delta',
+            title: "TrueLight",
             headerShown: false,
           }}
         />
