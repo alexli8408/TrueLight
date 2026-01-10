@@ -13,28 +13,21 @@
  */
 
 import * as Speech from 'expo-speech';
-import { SignalState, ColorblindnessType, getSignalMessage, TIMING } from '../constants/accessibility';
+import { SignalState, ColorblindnessType, getSignalMessage } from '../constants/accessibility';
 
 let lastSpokenState: SignalState | null = null;
-let lastSpokenTime = 0;
 
 /**
  * Speaks the traffic signal state if it has changed
- * Includes debouncing to avoid repetitive announcements
+ * Only announces when the state actually changes (not on every detection)
  */
 export async function speakSignalState(
   state: SignalState,
   colorblindType: ColorblindnessType,
   force = false
 ): Promise<void> {
-  const now = Date.now();
-
-  // Skip if same state was announced recently (debouncing)
-  if (
-    !force &&
-    state === lastSpokenState &&
-    now - lastSpokenTime < TIMING.audioDebounce
-  ) {
+  // Only announce when state actually changes (or if forced)
+  if (!force && state === lastSpokenState) {
     return;
   }
 
@@ -60,7 +53,6 @@ export async function speakSignalState(
   });
 
   lastSpokenState = state;
-  lastSpokenTime = now;
 }
 
 /**
@@ -90,9 +82,8 @@ export async function isSpeaking(): Promise<boolean> {
 }
 
 /**
- * Resets the debounce state (useful when resuming the app)
+ * Resets the speech state (useful when resuming the app)
  */
 export function resetSpeechState(): void {
   lastSpokenState = null;
-  lastSpokenTime = 0;
 }
