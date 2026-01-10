@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "Delta - Colorblind Hazard Detection",
+    "slug": "delta-colorblind-hazard-detection",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera to detect hazards for colorblind users.",
+        "NSMicrophoneUsageDescription": "This app uses audio for warnings.",
+        "NSLocationWhenInUseUsageDescription": "This app uses location to detect speed for warning timing."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Delta to access your camera to detect hazards."
+        }
+      ]
+    ]
+  }
+}
