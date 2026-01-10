@@ -48,6 +48,14 @@ export default function RootLayout() {
             }}
           />
           <Stack.Screen
+            name="logout"
+            options={{
+              title: 'Logout',
+              headerShown: false,
+              presentation: 'modal',
+            }}
+          />
+          <Stack.Screen
             name="test"
             options={{
               title: 'Vision Test',

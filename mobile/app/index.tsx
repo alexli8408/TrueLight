@@ -89,9 +89,9 @@ export default function WelcomeScreen() {
     router.push("/test");
   };
 
-  const handleLogout = async () => {
-    await logout();
-    router.replace("/login");
+  const handleLogout = () => {
+    speak('Opening logout screen');
+    router.push('/logout');
   };
 
   // If user has completed setup, show simplified home
