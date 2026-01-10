@@ -1,181 +1,160 @@
 /**
  * Welcome/Onboarding Screen
  *
- * The entry point of the app. Explains what Delta does and
- * guides users to take the color vision test before using the camera.
- *
- * ACCESSIBILITY:
- * - Large, readable text
- * - High contrast colors
- * - Clear call-to-action buttons
- * - Screen reader support
+ * Entry point that either:
+ * - Shows onboarding for first-time users
+ * - Redirects to main app for returning users
  */
 
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, Redirect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { COLORS, SIZES, ColorblindnessType } from "../constants/accessibility";
-import {
-  isOnboardingComplete,
-  getColorblindType,
-  setColorblindType,
-  completeOnboarding,
-} from "../services/storage";
+import { COLORS, SIZES } from "../constants/accessibility";
+import { useAppStore } from "../store/useAppStore";
 import { speak } from "../services/speech";
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const [hasCompletedSetup, setHasCompletedSetup] = useState(false);
-  const [userColorblindType, setUserColorblindType] =
-    useState<ColorblindnessType>("unknown");
+  const { hasCompletedOnboarding, setOnboardingComplete, setColorVisionProfile } =
+    useAppStore();
 
-  useEffect(() => {
-    // Check if user has already completed onboarding
-    const completed = isOnboardingComplete();
-    setHasCompletedSetup(completed);
-    if (completed) {
-      setUserColorblindType(getColorblindType());
-    }
-  }, []);
-
-  const handleStartTest = () => {
-    speak("Starting color vision assessment");
-    router.push("/test");
-  };
-
-  const handleSkipTest = () => {
-    // Default to providing enhanced cues for safety
-    setColorblindType("low_vision");
-    completeOnboarding();
-    speak("Skipping test. Using enhanced audio descriptions for safety.");
-    router.push("/camera");
-  };
-
-  const handleStartCamera = () => {
-    speak("Starting traffic signal detection");
-    router.push("/camera");
-  };
-
-  const handleRetakeTest = () => {
-    speak("Retaking color vision assessment");
-    router.push("/test");
-  };
-
-  // If user has completed setup, show simplified home
-  if (hasCompletedSetup) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={styles.title} accessibilityRole="header">
-            DELTA
-          </Text>
-          <Text style={styles.subtitle}>Traffic Signal Assistant</Text>
-
-          <View style={styles.statusCard}>
-            <Text style={styles.statusLabel}>Your Settings</Text>
-            <Text style={styles.statusValue}>
-              {getVisionTypeLabel(userColorblindType)}
-            </Text>
-          </View>
-
-          <Pressable
-            style={styles.primaryButton}
-            onPress={handleStartCamera}
-            accessibilityRole="button"
-            accessibilityLabel="Start camera and begin detecting traffic signals"
-          >
-            <Text style={styles.primaryButtonText}>START DETECTION</Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={handleRetakeTest}
-            accessibilityRole="button"
-            accessibilityLabel="Retake the color vision test"
-          >
-            <Text style={styles.secondaryButtonText}>Retake Vision Test</Text>
-          </Pressable>
-        </ScrollView>
-      </SafeAreaView>
-    );
+  // If user has completed onboarding, redirect to main app
+  if (hasCompletedOnboarding) {
+    return <Redirect href="/(tabs)/dashcam" />;
   }
 
-  // First-time onboarding
+  const handleGetStarted = () => {
+    speak("Let's set up Delta for you.");
+    router.push("/(tabs)/profile/test");
+  };
+
+  const handleSkip = () => {
+    // Set to low vision mode for maximum assistance
+    setColorVisionProfile({
+      type: "low_vision",
+      severity: "moderate",
+      confidence: 0.5,
+      testDate: null,
+      problematicColors: {
+        red: true,
+        green: true,
+        blue: true,
+        yellow: true,
+      },
+    });
+    setOnboardingComplete(true);
+    speak("Using enhanced audio mode for maximum assistance.");
+    router.replace("/(tabs)/dashcam");
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title} accessibilityRole="header">
-          DELTA
-        </Text>
-        <Text style={styles.subtitle}>Traffic Signal Assistant</Text>
-
-        <View style={styles.descriptionCard}>
-          <Text style={styles.description}>
-            Delta helps you navigate traffic signals safely by detecting lights
-            and providing clear audio feedback.
-          </Text>
-          <Text style={styles.description}>
-            Point your camera at traffic signals to hear announcements like "Red
-            light - Stop" or "Green light - Safe to proceed."
-          </Text>
+        {/* Logo/Title */}
+        <View style={styles.header}>
+          <Text style={styles.logo}>DELTA</Text>
+          <Text style={styles.tagline}>Your Eyes on the Road</Text>
         </View>
 
+        {/* Description */}
+        <View style={styles.descriptionContainer}>
+          <Text style={styles.description}>
+            Delta is a dashcam app designed for people with color blindness and
+            visual impairments.
+          </Text>
+
+          <View style={styles.featureList}>
+            <FeatureItem
+              icon="C"
+              title="Smart Detection"
+              description="Identifies traffic signals, stop signs, brake lights, and more"
+            />
+            <FeatureItem
+              icon="V"
+              title="Voice Alerts"
+              description="Clear audio notifications for hazards you might miss"
+            />
+            <FeatureItem
+              icon="P"
+              title="Personalized"
+              description="Adapts to your specific color vision needs"
+            />
+            <FeatureItem
+              icon="M"
+              title="Multi-Mode"
+              description="Works for driving, biking, walking, and more"
+            />
+          </View>
+        </View>
+
+        {/* Quick Vision Test Prompt */}
         <View style={styles.testPrompt}>
-          <Text style={styles.testPromptTitle}>Quick Vision Assessment</Text>
-          <Text style={styles.testPromptDescription}>
-            Take a quick 30-second test so we can customize the app to work best
-            for your vision.
+          <Text style={styles.testPromptTitle}>
+            Quick Color Vision Assessment
+          </Text>
+          <Text style={styles.testPromptText}>
+            Take a 1-2 minute test to help us customize alerts for your vision.
+            This isn't a medical diagnosis — it helps personalize your
+            experience.
           </Text>
         </View>
 
-        <Pressable
-          style={styles.primaryButton}
-          onPress={handleStartTest}
-          accessibilityRole="button"
-          accessibilityLabel="Start the color vision assessment test"
-        >
-          <Text style={styles.primaryButtonText}>TAKE VISION TEST</Text>
-        </Pressable>
+        {/* Action Buttons */}
+        <View style={styles.buttonContainer}>
+          <Pressable
+            style={styles.primaryButton}
+            onPress={handleGetStarted}
+            accessibilityRole="button"
+            accessibilityLabel="Get started with vision test"
+          >
+            <Text style={styles.primaryButtonText}>GET STARTED</Text>
+          </Pressable>
 
-        <Pressable
-          style={styles.secondaryButton}
-          onPress={handleSkipTest}
-          accessibilityRole="button"
-          accessibilityLabel="Skip the test and use default settings"
-        >
-          <Text style={styles.secondaryButtonText}>
-            Skip and use enhanced audio
-          </Text>
-        </Pressable>
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={handleSkip}
+            accessibilityRole="button"
+            accessibilityLabel="Skip test and use enhanced audio mode"
+          >
+            <Text style={styles.secondaryButtonText}>
+              Skip & Use Enhanced Audio
+            </Text>
+          </Pressable>
+        </View>
 
-        <Text style={styles.footer}>Your data stays on your device</Text>
+        {/* Footer */}
+        <Text style={styles.footer}>
+          Your data stays on your device. No account required.
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function getVisionTypeLabel(type: ColorblindnessType): string {
-  switch (type) {
-    case "normal":
-      return "Standard mode";
-    case "protanopia":
-      return "Red-enhanced mode";
-    case "deuteranopia":
-      return "Green-enhanced mode";
-    case "tritanopia":
-      return "Blue-yellow mode";
-    case "low_vision":
-      return "Full audio descriptions";
-    default:
-      return "Adaptive mode";
-  }
+function FeatureItem({
+  icon,
+  title,
+  description,
+}: {
+  icon: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <View style={styles.featureItem}>
+      <View style={styles.featureIcon}>
+        <Text style={styles.featureIconText}>{icon}</Text>
+      </View>
+      <View style={styles.featureContent}>
+        <Text style={styles.featureTitle}>{title}</Text>
+        <Text style={styles.featureDescription}>{description}</Text>
+      </View>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -183,88 +162,101 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  content: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: SIZES.spacingLarge,
-  },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: "center",
-    alignItems: "center",
     padding: SIZES.spacingLarge,
+    justifyContent: "center",
   },
-  title: {
-    fontSize: SIZES.textXL + 16,
-    fontWeight: "bold",
-    color: COLORS.textPrimary,
-    letterSpacing: 8,
-    marginBottom: SIZES.spacingSmall,
-  },
-  subtitle: {
-    fontSize: SIZES.textMedium,
-    color: COLORS.textSecondary,
+  header: {
+    alignItems: "center",
     marginBottom: SIZES.spacingLarge * 2,
   },
-  descriptionCard: {
-    backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: SIZES.borderRadius,
-    padding: SIZES.spacingLarge,
+  logo: {
+    fontSize: 64,
+    fontWeight: "bold",
+    color: COLORS.textPrimary,
+    letterSpacing: 12,
+  },
+  tagline: {
+    fontSize: SIZES.textMedium,
+    color: COLORS.green,
+    marginTop: SIZES.spacingSmall,
+  },
+  descriptionContainer: {
     marginBottom: SIZES.spacingLarge,
-    width: "100%",
   },
   description: {
     fontSize: SIZES.textSmall,
+    color: COLORS.textSecondary,
+    textAlign: "center",
+    lineHeight: 24,
+    marginBottom: SIZES.spacingLarge,
+  },
+  featureList: {
+    gap: SIZES.spacingMedium,
+  },
+  featureItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: COLORS.backgroundSecondary,
+    padding: SIZES.spacingMedium,
+    borderRadius: SIZES.borderRadius,
+  },
+  featureIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.green,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: SIZES.spacingMedium,
+  },
+  featureIconText: {
+    color: COLORS.background,
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  featureContent: {
+    flex: 1,
+  },
+  featureTitle: {
+    fontSize: SIZES.textSmall,
+    fontWeight: "bold",
     color: COLORS.textPrimary,
-    lineHeight: 26,
-    marginBottom: SIZES.spacingMedium,
+    marginBottom: 2,
+  },
+  featureDescription: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
   },
   testPrompt: {
     backgroundColor: COLORS.backgroundSecondary,
     borderRadius: SIZES.borderRadius,
     padding: SIZES.spacingLarge,
     marginBottom: SIZES.spacingLarge,
-    width: "100%",
     borderLeftWidth: 4,
     borderLeftColor: COLORS.green,
   },
   testPromptTitle: {
-    fontSize: SIZES.textMedium,
+    fontSize: SIZES.textSmall,
     fontWeight: "bold",
     color: COLORS.textPrimary,
     marginBottom: SIZES.spacingSmall,
   },
-  testPromptDescription: {
-    fontSize: SIZES.textSmall,
+  testPromptText: {
+    fontSize: 14,
     color: COLORS.textSecondary,
-    lineHeight: 24,
+    lineHeight: 20,
   },
-  statusCard: {
-    backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: SIZES.borderRadius,
-    padding: SIZES.spacingLarge,
-    marginBottom: SIZES.spacingLarge * 2,
-    width: "100%",
-    alignItems: "center",
-  },
-  statusLabel: {
-    fontSize: SIZES.textSmall,
-    color: COLORS.textSecondary,
-    marginBottom: SIZES.spacingSmall,
-  },
-  statusValue: {
-    fontSize: SIZES.textMedium,
-    fontWeight: "bold",
-    color: COLORS.green,
+  buttonContainer: {
+    gap: SIZES.spacingMedium,
+    marginBottom: SIZES.spacingLarge,
   },
   primaryButton: {
     backgroundColor: COLORS.green,
-    paddingHorizontal: SIZES.spacingLarge * 2,
     paddingVertical: SIZES.buttonPadding,
     borderRadius: SIZES.borderRadius,
-    marginBottom: SIZES.spacingMedium,
-    minWidth: 250,
     alignItems: "center",
   },
   primaryButtonText: {
@@ -275,12 +267,10 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     backgroundColor: "transparent",
-    paddingHorizontal: SIZES.spacingLarge,
     paddingVertical: SIZES.buttonPadding,
     borderRadius: SIZES.borderRadius,
     borderWidth: 1,
     borderColor: COLORS.border,
-    minWidth: 250,
     alignItems: "center",
   },
   secondaryButtonText: {
@@ -290,7 +280,7 @@ const styles = StyleSheet.create({
   footer: {
     fontSize: 14,
     color: COLORS.textSecondary,
-    marginTop: SIZES.spacingLarge * 2,
+    textAlign: "center",
     opacity: 0.6,
   },
 });

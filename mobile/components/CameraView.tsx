@@ -2,7 +2,7 @@
  * CameraView Component
  *
  * Captures camera frames and sends them to the backend for analysis.
- * Optimized for real-time traffic signal detection.
+ * Optimized for real-time traffic signal detection with dashcam features.
  */
 
 import React, { useRef, useState, useEffect, useCallback } from "react";
@@ -16,18 +16,23 @@ import {
   SIZES,
   TIMING,
   SignalState,
-  ColorblindnessType,
   getSignalMessage,
 } from "../constants/accessibility";
 import { detectSignal, DetectionResponse } from "../services/api";
 import { speakSignalState, resetSpeechState } from "../services/speech";
+import { useAppStore, ColorBlindnessType } from "../store/useAppStore";
 
 interface Props {
-  colorblindType: ColorblindnessType;
+  colorblindType: ColorBlindnessType;
   onError?: (error: string) => void;
+  onDetection?: (state: SignalState, confidence: number) => void;
 }
 
-export function CameraViewComponent({ colorblindType, onError }: Props) {
+export function CameraViewComponent({
+  colorblindType,
+  onError,
+  onDetection,
+}: Props) {
   const cameraRef = useRef<ExpoCameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [isCapturing, setIsCapturing] = useState(true);
@@ -35,6 +40,14 @@ export function CameraViewComponent({ colorblindType, onError }: Props) {
   const [confidence, setConfidence] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Get settings from store
+  const { alertSettings, transportSettings } = useAppStore();
+
+  // Calculate frame interval based on transport mode
+  const frameInterval =
+    transportSettings.modeConfig[transportSettings.currentMode]
+      .frameProcessingIntervalMs;
 
   // Capture and analyze a frame
   const captureFrame = useCallback(async () => {
@@ -48,7 +61,7 @@ export function CameraViewComponent({ colorblindType, onError }: Props) {
         base64: true,
         quality: 0.3,
         skipProcessing: true,
-        shutterSound: false, // Disable shutter sound
+        shutterSound: false,
       });
 
       if (!photo?.base64) {
@@ -62,9 +75,16 @@ export function CameraViewComponent({ colorblindType, onError }: Props) {
       setCurrentState(result.state);
       setConfidence(result.confidence);
 
+      // Notify parent component
+      onDetection?.(result.state, result.confidence);
+
       // Speak the result if confidence is high enough
-      if (result.confidence >= TIMING.minConfidenceToAnnounce) {
-        await speakSignalState(result.state, colorblindType);
+      if (result.confidence >= alertSettings.minConfidenceToAlert) {
+        await speakSignalState(
+          result.state,
+          colorblindType as any, // Type compatibility
+          alertSettings.positionCuesEnabled
+        );
       }
     } catch (error) {
       console.error("Capture error:", error);
@@ -72,16 +92,21 @@ export function CameraViewComponent({ colorblindType, onError }: Props) {
     } finally {
       setIsProcessing(false);
     }
-  }, [isProcessing, isCapturing, colorblindType, onError]);
+  }, [
+    isProcessing,
+    isCapturing,
+    colorblindType,
+    onError,
+    onDetection,
+    alertSettings.minConfidenceToAlert,
+    alertSettings.positionCuesEnabled,
+  ]);
 
   // Start/stop capture interval
   useEffect(() => {
     if (isCapturing && permission?.granted) {
       resetSpeechState();
-      captureIntervalRef.current = setInterval(
-        captureFrame,
-        TIMING.captureInterval,
-      );
+      captureIntervalRef.current = setInterval(captureFrame, frameInterval);
     }
 
     return () => {
@@ -90,7 +115,7 @@ export function CameraViewComponent({ colorblindType, onError }: Props) {
         captureIntervalRef.current = null;
       }
     };
-  }, [isCapturing, permission?.granted, captureFrame]);
+  }, [isCapturing, permission?.granted, captureFrame, frameInterval]);
 
   // Get display info based on state
   const getStateColor = () => {
@@ -123,7 +148,27 @@ export function CameraViewComponent({ colorblindType, onError }: Props) {
     if (currentState === "unknown") {
       return "Point camera at traffic light";
     }
-    return getSignalMessage(currentState, colorblindType);
+    // Use position cues based on settings
+    return getSignalMessage(
+      currentState,
+      alertSettings.positionCuesEnabled ? "protanopia" : "normal"
+    );
+  };
+
+  // Get shape indicator for colorblind users
+  const getShapeIndicator = () => {
+    if (!alertSettings.shapeCuesEnabled) return null;
+
+    switch (currentState) {
+      case "red":
+        return <View style={[styles.shapeSquare, { backgroundColor: COLORS.red }]} />;
+      case "yellow":
+        return <View style={[styles.shapeCircle, { backgroundColor: COLORS.yellow }]} />;
+      case "green":
+        return <View style={[styles.shapeTriangle, { borderBottomColor: COLORS.green }]} />;
+      default:
+        return null;
+    }
   };
 
   // Handle permissions
@@ -158,35 +203,55 @@ export function CameraViewComponent({ colorblindType, onError }: Props) {
 
   return (
     <View style={styles.container}>
-      {/* Status bar at top */}
-      <View style={styles.statusContainer}>
-        {/* State indicator */}
-        <View style={[styles.stateIndicator, { backgroundColor: stateColor }]}>
-          <Text style={styles.stateText}>{getStateLabel()}</Text>
-        </View>
+      {/* Camera preview - full screen for dashcam mode */}
+      <ExpoCameraView ref={cameraRef} style={styles.camera} facing="back">
+        {/* Status overlay at top */}
+        <View style={styles.statusOverlay}>
+          {/* State indicator with optional shape */}
+          <View style={styles.stateRow}>
+            {getShapeIndicator()}
+            <View
+              style={[styles.stateIndicator, { backgroundColor: stateColor }]}
+            >
+              <Text style={styles.stateText}>{getStateLabel()}</Text>
+            </View>
+          </View>
 
-        {/* Action description */}
-        <View style={[styles.actionBar, { borderColor: stateColor }]}>
-          <Text style={styles.actionText}>{getActionText()}</Text>
-        </View>
-      </View>
-
-      {/* Camera preview - takes most of the screen */}
-      <View style={styles.cameraContainer}>
-        <ExpoCameraView ref={cameraRef} style={styles.camera} facing="back">
-          {/* Processing indicator */}
-          {isProcessing && (
-            <View style={styles.processingIndicator}>
-              <View
-                style={[styles.processingDot, { backgroundColor: stateColor }]}
-              />
+          {/* Action description */}
+          {currentState !== "unknown" && (
+            <View style={[styles.actionBar, { borderColor: stateColor }]}>
+              <Text style={styles.actionText}>{getActionText()}</Text>
             </View>
           )}
-        </ExpoCameraView>
-      </View>
+        </View>
 
-      {/* Bottom controls */}
-      <View style={styles.bottomBar}>
+        {/* Processing indicator */}
+        {isProcessing && (
+          <View style={styles.processingIndicator}>
+            <View
+              style={[styles.processingDot, { backgroundColor: stateColor }]}
+            />
+          </View>
+        )}
+
+        {/* Confidence indicator */}
+        {currentState !== "unknown" && (
+          <View style={styles.confidenceBar}>
+            <View
+              style={[
+                styles.confidenceFill,
+                {
+                  width: `${confidence * 100}%`,
+                  backgroundColor: stateColor,
+                },
+              ]}
+            />
+          </View>
+        )}
+      </ExpoCameraView>
+
+      {/* Pause/Resume control - minimal for dashcam mode */}
+      <View style={styles.controlOverlay}>
         <Pressable
           style={[
             styles.controlButton,
@@ -199,7 +264,7 @@ export function CameraViewComponent({ colorblindType, onError }: Props) {
           }
         >
           <Text style={styles.controlButtonText}>
-            {isCapturing ? "PAUSE" : "RESUME"}
+            {isCapturing ? "||" : "▶"}
           </Text>
         </Pressable>
       </View>
@@ -212,18 +277,29 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  statusContainer: {
-    paddingTop: 60, // Account for status bar / notch
+  camera: {
+    flex: 1,
+  },
+  statusOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 60,
     paddingHorizontal: SIZES.spacingMedium,
     paddingBottom: SIZES.spacingMedium,
-    backgroundColor: COLORS.background,
+  },
+  stateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: SIZES.spacingSmall,
+    marginBottom: SIZES.spacingSmall,
   },
   stateIndicator: {
-    alignSelf: "center",
     paddingHorizontal: SIZES.spacingLarge * 2,
     paddingVertical: SIZES.spacingMedium,
     borderRadius: SIZES.borderRadius,
-    marginBottom: SIZES.spacingSmall,
   },
   stateText: {
     color: COLORS.background,
@@ -232,8 +308,29 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
     textAlign: "center",
   },
+  // Shape indicators for colorblind users
+  shapeSquare: {
+    width: 32,
+    height: 32,
+    borderRadius: 4,
+  },
+  shapeCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  shapeTriangle: {
+    width: 0,
+    height: 0,
+    backgroundColor: "transparent",
+    borderLeftWidth: 16,
+    borderRightWidth: 16,
+    borderBottomWidth: 32,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+  },
   actionBar: {
-    backgroundColor: COLORS.backgroundSecondary,
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
     paddingVertical: SIZES.spacingMedium,
     paddingHorizontal: SIZES.spacingLarge,
     borderRadius: SIZES.borderRadius,
@@ -244,15 +341,6 @@ const styles = StyleSheet.create({
     fontSize: SIZES.textMedium,
     textAlign: "center",
     fontWeight: "500",
-  },
-  cameraContainer: {
-    flex: 1,
-    overflow: "hidden",
-    marginHorizontal: SIZES.spacingMedium,
-    borderRadius: SIZES.borderRadius,
-  },
-  camera: {
-    flex: 1,
   },
   processingIndicator: {
     position: "absolute",
@@ -265,24 +353,38 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     opacity: 0.9,
   },
-  bottomBar: {
-    paddingVertical: SIZES.spacingMedium,
-    paddingHorizontal: SIZES.spacingMedium,
-    backgroundColor: COLORS.background,
+  confidenceBar: {
+    position: "absolute",
+    bottom: 80,
+    left: SIZES.spacingLarge,
+    right: SIZES.spacingLarge,
+    height: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 2,
+  },
+  confidenceFill: {
+    height: "100%",
+    borderRadius: 2,
+  },
+  controlOverlay: {
+    position: "absolute",
+    bottom: 20,
+    left: 20,
   },
   controlButton: {
-    alignSelf: "center",
-    backgroundColor: COLORS.buttonBackground,
-    paddingHorizontal: SIZES.spacingLarge * 2,
-    paddingVertical: SIZES.spacingMedium,
-    borderRadius: SIZES.borderRadius,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
   },
   controlButtonPaused: {
     backgroundColor: COLORS.green,
   },
   controlButtonText: {
     color: COLORS.textPrimary,
-    fontSize: SIZES.textSmall,
+    fontSize: 18,
     fontWeight: "bold",
   },
   message: {

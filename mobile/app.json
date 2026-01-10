@@ -3,7 +3,7 @@
     "name": "Delta",
     "slug": "delta",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
@@ -15,16 +15,23 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "Delta needs camera access to detect traffic signals and help you navigate safely.",
-        "NSMicrophoneUsageDescription": "Delta may use the microphone for voice commands in future updates."
-      }
+        "NSCameraUsageDescription": "Delta needs camera access to detect traffic signals and hazards to help you navigate safely.",
+        "NSMicrophoneUsageDescription": "Delta may use the microphone for voice commands in future updates.",
+        "NSLocationWhenInUseUsageDescription": "Delta uses your location to detect your speed and adjust alert timing for walking, biking, or driving.",
+        "UIRequiresFullScreen": false
+      },
+      "requireFullScreen": false
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "permissions": ["CAMERA"],
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
       "edgeToEdgeEnabled": true
     },
     "platforms": ["ios", "android"],
@@ -34,6 +41,12 @@
         "expo-camera",
         {
           "cameraPermission": "Delta needs camera access to detect traffic signals and keep you safe."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Delta uses your location to detect your speed and adjust alert timing."
         }
       ]
     ],

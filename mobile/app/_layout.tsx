@@ -1,16 +1,42 @@
 /**
  * Root Layout
  *
- * Sets up the navigation structure and global styles.
- * Uses dark theme for accessibility and reduced eye strain.
+ * Sets up the navigation structure with:
+ * - Onboarding flow for first-time users
+ * - Tab navigation for main app
+ * - Global styles and dark theme
  */
 
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet } from 'react-native';
-import { COLORS } from '../constants/accessibility';
+import { useEffect, useState } from "react";
+import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { View, StyleSheet, ActivityIndicator, Text } from "react-native";
+import { COLORS } from "../constants/accessibility";
+import { useAppStore } from "../store/useAppStore";
 
 export default function RootLayout() {
+  const [isLoading, setIsLoading] = useState(true);
+  const { hasCompletedOnboarding } = useAppStore();
+
+  useEffect(() => {
+    // Small delay to ensure store is hydrated from AsyncStorage
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <StatusBar style="light" />
+        <ActivityIndicator size="large" color={COLORS.green} />
+        <Text style={styles.loadingText}>Loading Delta...</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
@@ -21,33 +47,28 @@ export default function RootLayout() {
           },
           headerTintColor: COLORS.textPrimary,
           headerTitleStyle: {
-            fontWeight: 'bold',
+            fontWeight: "bold",
             fontSize: 20,
           },
           contentStyle: {
             backgroundColor: COLORS.background,
           },
-          animation: 'fade',
+          animation: "fade",
         }}
       >
+        {/* Onboarding screens for first-time users */}
         <Stack.Screen
           name="index"
           options={{
-            title: 'Delta',
+            title: "Delta",
             headerShown: false,
           }}
         />
+
+        {/* Main app with tab navigation */}
         <Stack.Screen
-          name="test"
+          name="(tabs)"
           options={{
-            title: 'Vision Test',
-            headerBackTitle: 'Back',
-          }}
-        />
-        <Stack.Screen
-          name="camera"
-          options={{
-            title: 'Delta',
             headerShown: false,
           }}
         />
@@ -60,5 +81,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingText: {
+    color: COLORS.textSecondary,
+    fontSize: 16,
+    marginTop: 16,
   },
 });
