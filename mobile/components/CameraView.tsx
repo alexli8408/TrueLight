@@ -8,10 +8,12 @@
  * - Bounding boxes around detected objects
  * - Color-specific detection based on user's colorblindness profile
  * - ElevenLabs voice for color-related alerts only
+ * - Voice commands with AI assistant (Sierra)
+ * - Hands-free interaction
  */
 
 import React, { useRef, useState, useEffect, useCallback } from "react";
-import { View, Text, StyleSheet, Pressable, Dimensions } from "react-native";
+import { View, Text, StyleSheet, Pressable, Dimensions, Alert, Animated } from "react-native";
 import {
   CameraView as ExpoCameraView,
   useCameraPermissions,
@@ -25,10 +27,12 @@ import {
   ColorblindnessType,
 } from "../constants/accessibility";
 import { detectSignal, DetectionResponse, DetectedObject } from "../services/api";
-import { speakSignalState, resetSpeechState, speakWithElevenLabs } from "../services/speech";
+import { speakSignalState, resetSpeechState, speakWithElevenLabs, speak, stopSpeaking } from "../services/speech";
 import { useAppStore, ColorBlindnessType } from "../store/useAppStore";
 import { BoundingBoxOverlay } from "./BoundingBoxOverlay";
 import { getColorProfile, DETECTABLE_OBJECTS, DetectableObject } from "../constants/colorProfiles";
+import { parseVoiceCommand, executeVoiceCommand, VoiceCommand } from "../services/voiceCommands";
+import { analyzeScene, askQuestion, getGreeting, SceneAnalysis } from "../services/aiAssistant";
 
 interface Props {
   colorblindType: ColorBlindnessType;
@@ -48,6 +52,10 @@ export function CameraViewComponent({
   const [confidence, setConfidence] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [detectedObjects, setDetectedObjects] = useState<DetectedObject[]>([]);
+  const [isListening, setIsListening] = useState(false);
+  const [aiResponse, setAiResponse] = useState<string | null>(null);
+  const [lastFrameBase64, setLastFrameBase64] = useState<string | null>(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
   const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Get screen dimensions for bounding box calculations
@@ -63,6 +71,101 @@ export function CameraViewComponent({
   const frameInterval =
     transportSettings.modeConfig[transportSettings.currentMode]
       .frameProcessingIntervalMs;
+
+  // Pulse animation for listening indicator
+  useEffect(() => {
+    if (isListening) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.3,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [isListening, pulseAnim]);
+
+  // Handle AI assistant button press
+  const handleAskSierra = useCallback(async () => {
+    if (!lastFrameBase64) {
+      speak("I need to see something first. Please point the camera at what you want me to describe.");
+      return;
+    }
+    
+    setAiResponse(null);
+    speak("Let me take a look...");
+    
+    try {
+      const analysis = await analyzeScene(
+        lastFrameBase64,
+        colorblindType as ColorblindnessType,
+        {
+          transportMode: transportSettings.currentMode,
+        }
+      );
+      
+      // Build response message
+      let response = analysis.description;
+      
+      // Add traffic signal info if present
+      if (analysis.trafficSignals.length > 0) {
+        response += ` Traffic signal: ${analysis.trafficSignals.join(', ')}.`;
+      }
+      
+      // Add hazard warnings
+      if (analysis.hazards.length > 0) {
+        response += ` Caution: ${analysis.hazards.join(', ')}.`;
+      }
+      
+      // Add color warnings for colorblind users
+      if (analysis.colorWarnings.length > 0 && colorblindType !== 'normal') {
+        response += ` Note: ${analysis.colorWarnings.join('. ')}.`;
+      }
+      
+      // Add suggested action
+      response += ` ${analysis.suggestedAction}`;
+      
+      setAiResponse(response);
+      
+      // Use ElevenLabs for AI responses if enabled
+      if (colorProfile.useElevenLabs) {
+        await speakWithElevenLabs(response);
+      } else {
+        speak(response);
+      }
+    } catch (error) {
+      console.error("AI analysis error:", error);
+      speak("Sorry, I couldn't analyze the scene. Please try again.");
+    }
+  }, [lastFrameBase64, colorblindType, transportSettings.currentMode, colorProfile.useElevenLabs]);
+
+  // Handle quick check signal
+  const handleQuickCheck = useCallback(() => {
+    if (currentState === 'unknown') {
+      speak("No traffic signal detected. Point the camera at a traffic light.");
+    } else {
+      const message = currentState === 'red' 
+        ? "Red light. Stop." 
+        : currentState === 'yellow'
+        ? "Yellow light. Prepare to stop."
+        : "Green light. You may proceed.";
+      
+      if (colorProfile.useElevenLabs) {
+        speakWithElevenLabs(message);
+      } else {
+        speak(message);
+      }
+    }
+  }, [currentState, colorProfile.useElevenLabs]);
 
   // Capture and analyze a frame
   const captureFrame = useCallback(async () => {
@@ -82,6 +185,9 @@ export function CameraViewComponent({
       if (!photo?.base64) {
         throw new Error("Failed to capture image");
       }
+
+      // Save frame for AI assistant
+      setLastFrameBase64(photo.base64);
 
       // Send to backend for analysis with colorblind type for enhanced detection
       const result: DetectionResponse = await detectSignal(
@@ -365,10 +471,24 @@ export function CameraViewComponent({
             </Text>
           </View>
         )}
+        
+        {/* AI Response overlay */}
+        {aiResponse && (
+          <View style={styles.aiResponseOverlay}>
+            <Text style={styles.aiResponseText}>{aiResponse}</Text>
+            <Pressable 
+              style={styles.dismissButton}
+              onPress={() => setAiResponse(null)}
+            >
+              <Text style={styles.dismissButtonText}>✕</Text>
+            </Pressable>
+          </View>
+        )}
       </ExpoCameraView>
 
-      {/* Pause/Resume control - minimal for dashcam mode */}
+      {/* Control buttons */}
       <View style={styles.controlOverlay}>
+        {/* Pause/Resume button */}
         <Pressable
           style={[
             styles.controlButton,
@@ -384,6 +504,40 @@ export function CameraViewComponent({
             {isCapturing ? "||" : "▶"}
           </Text>
         </Pressable>
+      </View>
+      
+      {/* Right side controls - AI Assistant */}
+      <View style={styles.rightControlOverlay}>
+        {/* Quick signal check button */}
+        <Pressable
+          style={styles.quickCheckButton}
+          onPress={handleQuickCheck}
+          accessibilityRole="button"
+          accessibilityLabel="Quick signal check"
+        >
+          <Text style={styles.quickCheckText}>🚦</Text>
+        </Pressable>
+        
+        {/* AI Assistant button */}
+        <Animated.View style={{ transform: [{ scale: isListening ? pulseAnim : 1 }] }}>
+          <Pressable
+            style={[
+              styles.aiButton,
+              isListening && styles.aiButtonActive,
+            ]}
+            onPress={handleAskSierra}
+            onLongPress={() => {
+              setIsListening(true);
+              speak("Hi! I'm Sierra. How can I help you?");
+            }}
+            onPressOut={() => setIsListening(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Ask Sierra AI assistant"
+            accessibilityHint="Tap to describe scene, hold for voice commands"
+          >
+            <Text style={styles.aiButtonText}>🎙️</Text>
+          </Pressable>
+        </Animated.View>
       </View>
     </View>
   );
@@ -537,5 +691,68 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     fontSize: SIZES.textMedium,
     fontWeight: "bold",
+  },
+  // AI Assistant styles
+  rightControlOverlay: {
+    position: "absolute",
+    bottom: 20,
+    right: 20,
+    gap: 12,
+  },
+  aiButton: {
+    backgroundColor: "rgba(80, 80, 200, 0.8)",
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  aiButtonActive: {
+    backgroundColor: "rgba(200, 80, 80, 0.9)",
+  },
+  aiButtonText: {
+    fontSize: 24,
+  },
+  quickCheckButton: {
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickCheckText: {
+    fontSize: 20,
+  },
+  aiResponseOverlay: {
+    position: "absolute",
+    bottom: 140,
+    left: 20,
+    right: 20,
+    backgroundColor: "rgba(0, 0, 0, 0.85)",
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(100, 100, 200, 0.5)",
+  },
+  aiResponseText: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  dismissButton: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    padding: 4,
+  },
+  dismissButtonText: {
+    color: COLORS.textSecondary,
+    fontSize: 16,
   },
 });
