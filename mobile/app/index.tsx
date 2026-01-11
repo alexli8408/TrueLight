@@ -1,11 +1,18 @@
 /**
  * Welcome/Onboarding Screen
  *
- * Users can select their colorblindness type directly or take a test
+ * Light minimalist UI inspired by claudetempo.vercel.app and tomalmog.vercel.app
  */
 
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  ScrollView,
+  ActivityIndicator,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { COLORS, SIZES, ColorblindnessType } from "../constants/accessibility";
@@ -25,36 +32,36 @@ const VISION_TYPES: {
   label: string;
   description: string;
 }[] = [
-    {
-      type: "normal",
-      label: "Normal Vision",
-      description: "No color vision deficiency",
-    },
-    {
-      type: "protanopia",
-      label: "Protanopia",
-      description: "Difficulty seeing red",
-    },
-    {
-      type: "deuteranopia",
-      label: "Deuteranopia",
-      description: "Difficulty seeing green",
-    },
-    {
-      type: "tritanopia",
-      label: "Tritanopia",
-      description: "Difficulty seeing blue/yellow",
-    },
-    {
-      type: "low_vision",
-      label: "Low Vision",
-      description: "Prefer full audio descriptions",
-    },
-  ];
+  {
+    type: "normal",
+    label: "Normal Vision",
+    description: "No color vision deficiency",
+  },
+  {
+    type: "protanopia",
+    label: "Protanopia",
+    description: "Difficulty seeing red",
+  },
+  {
+    type: "deuteranopia",
+    label: "Deuteranopia",
+    description: "Difficulty seeing green",
+  },
+  {
+    type: "tritanopia",
+    label: "Tritanopia",
+    description: "Difficulty seeing blue/yellow",
+  },
+  {
+    type: "low_vision",
+    label: "Low Vision",
+    description: "Prefer full audio descriptions",
+  },
+];
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const { user, isAuth, loading: authLoading, logout } = useAuth();
+  const { user, isAuth, loading: authLoading } = useAuth();
   const [hasCompletedSetup, setHasCompletedSetup] = useState(false);
   const [userColorblindType, setUserColorblindType] =
     useState<ColorblindnessType>("unknown");
@@ -62,10 +69,6 @@ export default function WelcomeScreen() {
     useState<ColorblindnessType>("normal");
 
   useEffect(() => {
-    // Skip auth check - app works without authentication
-    // Users can optionally login later for cloud sync features
-    
-    // Check onboarding status
     const completed = isOnboardingComplete();
     setHasCompletedSetup(completed);
     if (completed) {
@@ -73,13 +76,11 @@ export default function WelcomeScreen() {
     }
   }, []);
 
-  // Show loading screen only while auth is initializing (brief)
   if (authLoading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.green} />
-          <Text style={styles.loadingText}>Loading...</Text>
+          <ActivityIndicator size="small" color={COLORS.textPrimary} />
         </View>
       </SafeAreaView>
     );
@@ -98,24 +99,17 @@ export default function WelcomeScreen() {
   };
 
   const handleStartCamera = () => {
-    // If "normal" is selected (default) but not explicitly saved yet, save it now
     if (selectedType !== "unknown") {
       setColorblindType(selectedType);
       completeOnboarding();
     }
-
     speak("Starting traffic signal detection");
     router.push("/camera");
   };
 
   const hasSelection = selectedType !== "unknown";
 
-  const handleLogout = () => {
-    speak('Opening logout screen');
-    router.push('/logout');
-  };
-
-  // If user has completed setup, show simplified home
+  // Completed setup - show home screen
   if (hasCompletedSetup) {
     return (
       <SafeAreaView style={styles.container}>
@@ -123,65 +117,47 @@ export default function WelcomeScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.title} accessibilityRole="header">
-            True Light
-          </Text>
-          <Text style={styles.subtitle}>Color Assistant</Text>
+          <View style={styles.header}>
+            <Text style={styles.title}>TrueLight</Text>
+            <Text style={styles.subtitle}>Color vision assistant</Text>
+          </View>
 
-          {user && (
-            <View style={styles.userCard}>
-              <Text style={styles.userLabel}>Logged in as</Text>
-              <Text style={styles.userValue}>{user.username}</Text>
-            </View>
-          )}
+          {user && <Text style={styles.userInfo}>{user.username}</Text>}
 
-          <View style={styles.statusCard}>
-            <Text style={styles.statusLabel}>Your Settings</Text>
-            <Text style={styles.statusValue}>
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>Current profile</Text>
+            <Text style={styles.cardValue}>
               {getVisionTypeLabel(userColorblindType)}
             </Text>
           </View>
 
-          <Pressable
-            style={styles.primaryButton}
-            onPress={handleStartCamera}
-            accessibilityRole="button"
-            accessibilityLabel="Start camera and begin detecting traffic signals"
-          >
-            <Text style={styles.primaryButtonText}>START DETECTION</Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={() => {
-              setHasCompletedSetup(false);
-              speak("Retaking vision test");
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Change vision settings"
-          >
-            <Text style={styles.secondaryButtonText}>Change Settings</Text>
-          </Pressable>
-
-          {isAuth ? (
+          <View style={styles.buttonGroup}>
             <Pressable
-              style={styles.logoutButton}
-              onPress={handleLogout}
+              style={styles.primaryButton}
+              onPress={handleStartCamera}
               accessibilityRole="button"
-              accessibilityLabel="Logout"
+              accessibilityLabel="Start detection"
             >
-              <Text style={styles.logoutButtonText}>Logout</Text>
+              <Text style={styles.primaryButtonText}>Start Detection</Text>
             </Pressable>
-          ) : (
+
             <Pressable
-              style={styles.loginButton}
-              onPress={() => router.push('/login')}
+              style={styles.textButton}
+              onPress={() => {
+                setHasCompletedSetup(false);
+                speak("Changing settings");
+              }}
               accessibilityRole="button"
-              accessibilityLabel="Login for cloud sync"
             >
-              <Text style={styles.loginButtonText}>Login (Optional)</Text>
+              <Text style={styles.textButtonText}>Change profile</Text>
             </Pressable>
-          )}
+          </View>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              Your data stays on your device
+            </Text>
+          </View>
         </ScrollView>
       </SafeAreaView>
     );
@@ -194,77 +170,59 @@ export default function WelcomeScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title} accessibilityRole="header">
-          True Light
-        </Text>
-        <Text style={styles.subtitle}>Color Assistant</Text>
-
-        <View style={styles.descriptionCard}>
-          <Text style={styles.description}>
-            True Light helps you navigate traffic signals safely by detecting lights
-            and providing clear audio feedback.
-          </Text>
-          <Text style={styles.description}>
-            Point your camera at traffic signals to hear announcements like "Red
-            light - Stop" or "Green light - Safe to proceed."
-          </Text>
+        <View style={styles.header}>
+          <Text style={styles.title}>TrueLight</Text>
+          <Text style={styles.subtitle}>Color vision assistant</Text>
         </View>
 
-        <Text style={styles.sectionTitle}>Select your vision type</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Select your vision type</Text>
 
-        <View style={styles.optionsContainer}>
-          {VISION_TYPES.map(({ type, label, description }) => (
-            <Pressable
-              key={type}
-              style={[
-                styles.optionButton,
-                selectedType === type && styles.optionButtonSelected,
-              ]}
-              onPress={() => handleSelectType(type)}
-              accessibilityRole="button"
-              accessibilityLabel={`${label}: ${description}`}
-              accessibilityState={{ selected: selectedType === type }}
-            >
-              <View style={styles.optionContent}>
-                <Text
-                  style={[
-                    styles.optionLabel,
-                    selectedType === type && styles.optionLabelSelected,
-                  ]}
-                >
-                  {label}
-                </Text>
-                <Text
-                  style={[
-                    styles.optionDescription,
-                    selectedType === type && styles.optionDescriptionSelected,
-                  ]}
-                >
-                  {description}
-                </Text>
-              </View>
-              {selectedType === type && (
-                <View style={styles.checkmark}>
-                  <Text style={styles.checkmarkText}>✓</Text>
+          <View style={styles.optionsContainer}>
+            {VISION_TYPES.map(({ type, label, description }) => (
+              <Pressable
+                key={type}
+                style={[
+                  styles.optionButton,
+                  selectedType === type && styles.optionButtonSelected,
+                ]}
+                onPress={() => handleSelectType(type)}
+                accessibilityRole="button"
+                accessibilityLabel={`${label}: ${description}`}
+                accessibilityState={{ selected: selectedType === type }}
+              >
+                <View style={styles.optionContent}>
+                  <Text
+                    style={[
+                      styles.optionLabel,
+                      selectedType === type && styles.optionLabelSelected,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.optionDescription,
+                      selectedType === type && styles.optionDescriptionSelected,
+                    ]}
+                  >
+                    {description}
+                  </Text>
                 </View>
-              )}
-            </Pressable>
-          ))}
-        </View>
-
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or</Text>
-          <View style={styles.dividerLine} />
+                {selectedType === type && (
+                  <Text style={styles.checkmark}>✓</Text>
+                )}
+              </Pressable>
+            ))}
+          </View>
         </View>
 
         <Pressable
-          style={styles.testButton}
+          style={styles.textButton}
           onPress={handleTakeTest}
           accessibilityRole="button"
-          accessibilityLabel="Take a short vision test to determine your type"
         >
-          <Text style={styles.testButtonText}>Not sure? Take a short test</Text>
+          <Text style={styles.textButtonText}>Not sure? Take a short test</Text>
         </Pressable>
 
         <View style={styles.spacer} />
@@ -277,7 +235,6 @@ export default function WelcomeScreen() {
           onPress={handleStartCamera}
           disabled={!hasSelection}
           accessibilityRole="button"
-          accessibilityLabel="Start camera and begin detecting traffic signals"
           accessibilityState={{ disabled: !hasSelection }}
         >
           <Text
@@ -286,11 +243,13 @@ export default function WelcomeScreen() {
               !hasSelection && styles.primaryButtonTextDisabled,
             ]}
           >
-            Start Detection
+            Continue
           </Text>
         </Pressable>
 
-        <Text style={styles.footer}>Your data stays on your device</Text>
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>Your data stays on your device</Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -323,146 +282,79 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  loadingText: {
-    marginTop: SIZES.spacingMedium,
-    fontSize: SIZES.textMedium,
-    color: COLORS.textSecondary,
-  },
-  content: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: SIZES.spacingLarge,
-  },
   scrollContent: {
     flexGrow: 1,
-    padding: SIZES.spacingLarge,
-    paddingTop: 60,
+    paddingHorizontal: 24,
+    paddingTop: 80,
+    paddingBottom: 40,
   },
   header: {
-    marginBottom: SIZES.spacingLarge * 1.5,
-  },
-  userCard: {
-    backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: SIZES.borderRadius,
-    padding: SIZES.spacingMedium,
-    marginBottom: SIZES.spacingMedium,
-    width: "100%",
-    alignItems: "center",
-  },
-  userLabel: {
-    fontSize: SIZES.textSmall,
-    color: COLORS.textSecondary,
-    marginBottom: SIZES.spacingSmall / 2,
-    textAlign: "center",
-  },
-  userValue: {
-    fontSize: SIZES.textMedium,
-    fontWeight: "bold",
-    color: COLORS.green,
-    textAlign: "center",
+    marginBottom: 48,
   },
   title: {
-    fontSize: SIZES.textXL + 20,
-    fontWeight: "800",
-    color: COLORS.textPrimary,
-    letterSpacing: 4,
-    marginBottom: SIZES.spacingSmall,
-    textAlign: "center",
-  },
-  subtitle: {
-    fontSize: SIZES.textMedium + 2,
-    color: COLORS.textSecondary,
-    marginBottom: SIZES.spacingLarge * 2,
-    textAlign: "center",
-    letterSpacing: 1,
-    opacity: 0.9,
-  },
-  sectionTitle: {
-    fontSize: SIZES.textMedium,
+    fontSize: 32,
     fontWeight: "600",
     color: COLORS.textPrimary,
-    marginBottom: SIZES.spacingMedium,
-    textAlign: "left",
+    letterSpacing: -0.5,
+    marginBottom: 4,
   },
-  descriptionCard: {
-    backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: SIZES.borderRadius,
-    padding: SIZES.spacingLarge,
-    marginBottom: SIZES.spacingLarge,
-    width: "100%",
+  subtitle: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    fontWeight: "400",
+  },
+  userInfo: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginBottom: 24,
   },
   description: {
-    fontSize: SIZES.textSmall,
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    lineHeight: 24,
+    marginBottom: 40,
+  },
+  section: {
+    marginBottom: 32,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: COLORS.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 16,
+  },
+  card: {
+    backgroundColor: COLORS.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 20,
+    marginBottom: 32,
+  },
+  cardLabel: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: COLORS.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  cardValue: {
+    fontSize: 18,
+    fontWeight: "500",
     color: COLORS.textPrimary,
-    lineHeight: 26,
-    marginBottom: SIZES.spacingMedium,
-    textAlign: "left",
   },
   optionsContainer: {
-    gap: SIZES.spacingSmall,
+    gap: 8,
   },
   optionButton: {
     backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: SIZES.borderRadius,
-    padding: SIZES.spacingMedium,
-    marginBottom: SIZES.spacingSmall,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 16,
     flexDirection: "row",
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  testPromptTitle: {
-    fontSize: SIZES.textMedium,
-    fontWeight: "bold",
-    color: COLORS.textPrimary,
-    marginBottom: SIZES.spacingSmall,
-    textAlign: "left",
-  },
-  testPromptDescription: {
-    fontSize: SIZES.textSmall,
-    color: COLORS.textSecondary,
-    lineHeight: 24,
-    textAlign: "left",
-  },
-  statusCard: {
-    backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: SIZES.borderRadius,
-    padding: SIZES.spacingLarge,
-    marginBottom: SIZES.spacingLarge * 2,
-    width: "100%",
-    alignItems: "center",
-  },
-  statusLabel: {
-    fontSize: SIZES.textSmall,
-    color: COLORS.textSecondary,
-    marginBottom: SIZES.spacingSmall,
-    textAlign: "center",
-  },
-  statusValue: {
-    fontSize: SIZES.textMedium,
-    fontWeight: "bold",
-    color: COLORS.green,
-    textAlign: "center",
-  },
-  secondaryButton: {
-    backgroundColor: "transparent",
-    paddingHorizontal: SIZES.spacingLarge,
-    paddingVertical: SIZES.buttonPadding,
-    borderRadius: SIZES.borderRadius,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    minWidth: 250,
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: SIZES.touchTarget,
-    marginBottom: SIZES.spacingMedium,
-  },
-  secondaryButtonText: {
-    color: COLORS.textSecondary,
-    fontSize: SIZES.textSmall,
-    textAlign: "center",
-    width: "100%",
   },
   optionButtonSelected: {
     backgroundColor: COLORS.textPrimary,
@@ -472,9 +364,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   optionLabel: {
-    fontSize: SIZES.textSmall,
-    fontWeight: "600",
+    fontSize: 15,
+    fontWeight: "500",
     color: COLORS.textPrimary,
+    marginBottom: 2,
   },
   optionLabelSelected: {
     color: COLORS.background,
@@ -482,121 +375,56 @@ const styles = StyleSheet.create({
   optionDescription: {
     fontSize: 13,
     color: COLORS.textSecondary,
-    marginTop: 2,
   },
   optionDescriptionSelected: {
-    color: "rgba(255, 255, 255, 0.7)",
+    color: "rgba(250, 251, 252, 0.7)",
   },
   checkmark: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: COLORS.background,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  checkmarkText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "600",
-    color: COLORS.textPrimary,
+    color: COLORS.background,
+    marginLeft: 12,
   },
-  divider: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: SIZES.spacingLarge,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
-  dividerText: {
-    paddingHorizontal: SIZES.spacingMedium,
-    fontSize: SIZES.textSmall,
-    color: COLORS.textSecondary,
-  },
-  testButton: {
-    paddingVertical: SIZES.buttonPadding,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: SIZES.borderRadius,
-  },
-  testButtonText: {
-    color: COLORS.textSecondary,
-    fontSize: SIZES.textSmall,
-    textAlign: "center",
-    width: "100%",
-  },
-  spacer: {
-    flex: 1,
-    minHeight: SIZES.spacingLarge,
+  buttonGroup: {
+    gap: 12,
   },
   primaryButton: {
     backgroundColor: COLORS.buttonBackground,
-    paddingVertical: SIZES.buttonPadding,
-    paddingHorizontal: SIZES.spacingLarge,
-    borderRadius: SIZES.borderRadius,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: SIZES.touchTarget,
-    width: "100%",
   },
   primaryButtonDisabled: {
     backgroundColor: COLORS.border,
   },
   primaryButtonText: {
     color: COLORS.buttonText,
-    fontSize: SIZES.textMedium,
-    fontWeight: "600",
-    textAlign: "center",
-    width: "100%",
+    fontSize: 15,
+    fontWeight: "500",
   },
   primaryButtonTextDisabled: {
+    color: COLORS.textMuted,
+  },
+  textButton: {
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  textButtonText: {
     color: COLORS.textSecondary,
+    fontSize: 14,
+    fontWeight: "400",
+  },
+  spacer: {
+    flex: 1,
+    minHeight: 32,
   },
   footer: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    textAlign: "center",
-    marginTop: SIZES.spacingLarge,
-    opacity: 0.6,
-  },
-  logoutButton: {
-    backgroundColor: "transparent",
-    paddingHorizontal: SIZES.spacingLarge,
-    paddingVertical: SIZES.buttonPadding / 2,
-    borderRadius: SIZES.borderRadius,
-    marginTop: SIZES.spacingLarge * 2,
-    minWidth: 250,
+    marginTop: 24,
     alignItems: "center",
-    justifyContent: "center",
-    minHeight: SIZES.touchTarget,
   },
-  logoutButtonText: {
-    color: COLORS.textSecondary,
-    fontSize: SIZES.textSmall,
-    opacity: 0.7,
-    textAlign: "center",
-    width: "100%",
-  },
-  loginButton: {
-    backgroundColor: "transparent",
-    paddingHorizontal: SIZES.spacingLarge,
-    paddingVertical: SIZES.buttonPadding / 2,
-    borderRadius: SIZES.borderRadius,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginTop: SIZES.spacingLarge * 2,
-    minWidth: 250,
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: SIZES.touchTarget,
-  },
-  loginButtonText: {
-    color: COLORS.textSecondary,
-    fontSize: SIZES.textSmall,
-    textAlign: "center",
-    width: "100%",
+  footerText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
   },
 });

@@ -14,7 +14,7 @@
  * - Clear labels
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -23,31 +23,32 @@ import {
   ScrollView,
   Switch,
   Alert,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { COLORS, SIZES, ColorblindnessType } from '../constants/accessibility';
+} from "react-native";
+import { useRouter } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { COLORS, SIZES, ColorblindnessType } from "../constants/accessibility";
 import {
   getColorblindType,
   getSettings,
   updateSettings,
   resetStorage,
   AppSettings,
-} from '../services/storage';
-import { audioAlertService } from '../services/AudioAlertService';
-import { speak } from '../services/speech';
-import { logout } from '../services/auth';
+} from "../services/storage";
+import { audioAlertService } from "../services/AudioAlertService";
+import { speak } from "../services/speech";
+import { logout } from "../services/auth";
 
-type SensitivityLevel = 'conservative' | 'normal' | 'aggressive';
+type SensitivityLevel = "conservative" | "normal" | "aggressive";
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const [colorblindType, setColorblindType] = useState<ColorblindnessType>('unknown');
+  const [colorblindType, setColorblindType] =
+    useState<ColorblindnessType>("unknown");
   const [settings, setSettings] = useState<AppSettings>(getSettings());
 
   useEffect(() => {
     setColorblindType(getColorblindType());
-    speak('Settings');
+    speak("Settings");
   }, []);
 
   const handleToggleAudio = (value: boolean) => {
@@ -55,7 +56,7 @@ export default function SettingsScreen() {
     setSettings(newSettings);
     updateSettings(newSettings);
     audioAlertService.setEnabled(value);
-    speak(value ? 'Audio enabled' : 'Audio disabled');
+    speak(value ? "Audio enabled" : "Audio disabled");
   };
 
   const handleToggleSpeed = (value: boolean) => {
@@ -68,7 +69,7 @@ export default function SettingsScreen() {
     const newSettings = { ...settings, warningSensitivity: level };
     setSettings(newSettings);
     updateSettings(newSettings);
-    
+
     // Adjust cooldowns based on sensitivity
     const cooldowns = {
       conservative: { critical: 5000, high: 8000, medium: 12000, low: 15000 },
@@ -81,75 +82,71 @@ export default function SettingsScreen() {
 
   const handleRetakeTest = () => {
     Alert.alert(
-      'Retake Vision Test',
-      'This will reset your colorblindness calibration. Continue?',
+      "Retake Vision Test",
+      "This will reset your colorblindness calibration. Continue?",
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: "Cancel", style: "cancel" },
         {
-          text: 'Retake',
+          text: "Retake",
           onPress: () => {
-            speak('Starting vision test');
-            router.push('/test');
+            speak("Starting vision test");
+            router.push("/test");
           },
         },
-      ]
+      ],
     );
   };
 
   const handleResetApp = () => {
     Alert.alert(
-      'Reset App',
-      'This will clear all settings and data. Continue?',
+      "Reset App",
+      "This will clear all settings and data. Continue?",
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: "Cancel", style: "cancel" },
         {
-          text: 'Reset',
-          style: 'destructive',
+          text: "Reset",
+          style: "destructive",
           onPress: () => {
             resetStorage();
-            speak('App reset. Returning to start.');
-            router.replace('/');
+            speak("App reset. Returning to start.");
+            router.replace("/");
           },
         },
-      ]
+      ],
     );
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Log Out',
-      'Are you sure you want to log out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Log Out',
-          style: 'destructive',
-          onPress: async () => {
-            speak('Logging out');
-            await logout();
-            router.replace('/login');
-          },
+    Alert.alert("Log Out", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log Out",
+        style: "destructive",
+        onPress: async () => {
+          speak("Logging out");
+          await logout();
+          router.replace("/login");
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const getVisionTypeLabel = (type: ColorblindnessType): string => {
     const labels: Record<ColorblindnessType, string> = {
-      normal: 'Normal Vision',
-      protanopia: 'Protanopia (Red-blind)',
-      deuteranopia: 'Deuteranopia (Green-blind)',
-      tritanopia: 'Tritanopia (Blue-blind)',
-      protanomaly: 'Protanomaly (Red-weak)',
-      deuteranomaly: 'Deuteranomaly (Green-weak)',
-      low_vision: 'Low Vision Mode',
-      unknown: 'Not Set',
+      normal: "Normal Vision",
+      protanopia: "Protanopia (Red-blind)",
+      deuteranopia: "Deuteranopia (Green-blind)",
+      tritanopia: "Tritanopia (Blue-blind)",
+      protanomaly: "Protanomaly (Red-weak)",
+      deuteranomaly: "Deuteranomaly (Green-weak)",
+      low_vision: "Low Vision Mode",
+      unknown: "Not Set",
     };
-    return labels[type] || 'Unknown';
+    return labels[type] || "Unknown";
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    <SafeAreaView style={styles.container} edges={["bottom"]}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -159,7 +156,9 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Vision Profile</Text>
           <View style={styles.profileCard}>
             <Text style={styles.profileLabel}>Current Setting</Text>
-            <Text style={styles.profileValue}>{getVisionTypeLabel(colorblindType)}</Text>
+            <Text style={styles.profileValue}>
+              {getVisionTypeLabel(colorblindType)}
+            </Text>
           </View>
           <Pressable
             style={styles.button}
@@ -173,7 +172,7 @@ export default function SettingsScreen() {
         {/* Audio Settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Audio</Text>
-          
+
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
               <Text style={styles.settingLabel}>Audio Alerts</Text>
@@ -193,7 +192,7 @@ export default function SettingsScreen() {
         {/* Speed Tracking */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Speed Tracking</Text>
-          
+
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
               <Text style={styles.settingLabel}>GPS Speed Detection</Text>
@@ -216,23 +215,29 @@ export default function SettingsScreen() {
           <Text style={styles.sectionDescription}>
             How frequently warnings are announced
           </Text>
-          
+
           <View style={styles.sensitivityOptions}>
-            {(['conservative', 'normal', 'aggressive'] as SensitivityLevel[]).map((level) => (
+            {(
+              ["conservative", "normal", "aggressive"] as SensitivityLevel[]
+            ).map((level) => (
               <Pressable
                 key={level}
                 style={[
                   styles.sensitivityButton,
-                  settings.warningSensitivity === level && styles.sensitivityButtonActive,
+                  settings.warningSensitivity === level &&
+                    styles.sensitivityButtonActive,
                 ]}
                 onPress={() => handleSensitivityChange(level)}
                 accessibilityRole="button"
-                accessibilityState={{ selected: settings.warningSensitivity === level }}
+                accessibilityState={{
+                  selected: settings.warningSensitivity === level,
+                }}
               >
                 <Text
                   style={[
                     styles.sensitivityText,
-                    settings.warningSensitivity === level && styles.sensitivityTextActive,
+                    settings.warningSensitivity === level &&
+                      styles.sensitivityTextActive,
                   ]}
                 >
                   {level.charAt(0).toUpperCase() + level.slice(1)}
@@ -240,26 +245,24 @@ export default function SettingsScreen() {
               </Pressable>
             ))}
           </View>
-          
+
           <Text style={styles.sensitivityHint}>
-            {settings.warningSensitivity === 'conservative' && 'Fewer alerts, longer cooldowns'}
-            {settings.warningSensitivity === 'normal' && 'Balanced alert frequency'}
-            {settings.warningSensitivity === 'aggressive' && 'More frequent alerts'}
+            {settings.warningSensitivity === "conservative" &&
+              "Fewer alerts, longer cooldowns"}
+            {settings.warningSensitivity === "normal" &&
+              "Balanced alert frequency"}
+            {settings.warningSensitivity === "aggressive" &&
+              "More frequent alerts"}
           </Text>
         </View>
 
         {/* About */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>About</Text>
-          
+
           <View style={styles.aboutCard}>
             <Text style={styles.aboutTitle}>TrueLight</Text>
             <Text style={styles.aboutVersion}>Version 1.0.0</Text>
-            <Text style={styles.aboutDescription}>
-              AI-powered hazard detection system for colorblind users.
-              Uses camera and audio to provide real-time warnings about
-              traffic signals, signs, and other color-based hazards.
-            </Text>
           </View>
 
           <Pressable
@@ -300,11 +303,11 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: "600",
     color: COLORS.textSecondary,
     marginBottom: SIZES.spacingSmall,
     letterSpacing: 1,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
   },
   sectionDescription: {
     fontSize: SIZES.textSmall,
@@ -325,13 +328,13 @@ const styles = StyleSheet.create({
   },
   profileValue: {
     fontSize: SIZES.textMedium,
-    fontWeight: '600',
+    fontWeight: "600",
     color: COLORS.textPrimary,
   },
   settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     backgroundColor: COLORS.backgroundSecondary,
     padding: SIZES.spacingMedium,
     marginBottom: SIZES.spacingSmall,
@@ -344,7 +347,7 @@ const styles = StyleSheet.create({
   },
   settingLabel: {
     fontSize: SIZES.textSmall + 2,
-    fontWeight: '600',
+    fontWeight: "600",
     color: COLORS.textPrimary,
     marginBottom: 2,
   },
@@ -353,7 +356,7 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   sensitivityOptions: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: SIZES.spacingSmall,
     marginBottom: SIZES.spacingSmall,
   },
@@ -364,7 +367,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.backgroundSecondary,
     borderWidth: 2,
     borderColor: COLORS.border,
-    alignItems: 'center',
+    alignItems: "center",
   },
   sensitivityButtonActive: {
     borderColor: COLORS.accent,
@@ -372,7 +375,7 @@ const styles = StyleSheet.create({
   },
   sensitivityText: {
     fontSize: SIZES.textSmall,
-    fontWeight: '600',
+    fontWeight: "600",
     color: COLORS.textSecondary,
   },
   sensitivityTextActive: {
@@ -381,14 +384,14 @@ const styles = StyleSheet.create({
   sensitivityHint: {
     fontSize: SIZES.textSmall - 2,
     color: COLORS.textSecondary,
-    textAlign: 'center',
-    fontStyle: 'italic',
+    textAlign: "center",
+    fontStyle: "italic",
   },
   button: {
     backgroundColor: COLORS.backgroundSecondary,
     paddingVertical: SIZES.buttonPadding,
     paddingHorizontal: SIZES.spacingLarge,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 1,
     borderColor: COLORS.border,
   },
@@ -402,7 +405,7 @@ const styles = StyleSheet.create({
   buttonText: {
     color: COLORS.textPrimary,
     fontSize: SIZES.textSmall + 2,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   aboutCard: {
     backgroundColor: COLORS.backgroundSecondary,
@@ -413,7 +416,7 @@ const styles = StyleSheet.create({
   },
   aboutTitle: {
     fontSize: SIZES.textMedium,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: COLORS.textPrimary,
     marginBottom: 4,
   },

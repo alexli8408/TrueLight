@@ -3,18 +3,31 @@
  *
  * Captures camera frames and sends them to the backend for analysis.
  * Optimized for real-time traffic signal detection with dashcam features.
- * 
- * Enhanced Features:
+ *
+ * Features:
  * - Bounding boxes around detected objects
  * - Color-specific detection based on user's colorblindness profile
- * - ElevenLabs voice for color-related alerts only
- * - Voice commands with AI assistant (Sierra)
- * - Hands-free interaction
- * - Motion tracking for moving objects (animated brackets)
+ * - ElevenLabs voice for color-related alerts
+ * - Motion tracking for moving objects
  */
 
-import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
-import { View, Text, StyleSheet, Pressable, Dimensions, Alert, Animated } from "react-native";
+import React, {
+  useRef,
+  useState,
+  useEffect,
+  useCallback,
+  useImperativeHandle,
+  forwardRef,
+} from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Dimensions,
+  Alert,
+  Animated,
+} from "react-native";
 import {
   CameraView as ExpoCameraView,
   useCameraPermissions,
@@ -27,14 +40,39 @@ import {
   getSignalMessage,
   ColorblindnessType,
 } from "../constants/accessibility";
-import { detectSignal, DetectionResponse, DetectedObject, TransportMode } from "../services/api";
-import { speakSignalState, resetSpeechState, speakWithElevenLabs, speak, speakAlert, stopSpeaking, speakProximityAlert, speakSceneDescription } from "../services/speech";
+import {
+  detectSignal,
+  DetectionResponse,
+  DetectedObject,
+  TransportMode,
+} from "../services/api";
+import {
+  speakSignalState,
+  resetSpeechState,
+  speakWithElevenLabs,
+  speak,
+  speakAlert,
+  stopSpeaking,
+  speakProximityAlert,
+  speakSceneDescription,
+} from "../services/speech";
 import { useAppStore, ColorBlindnessType } from "../store/useAppStore";
 import { BoundingBoxOverlay } from "./BoundingBoxOverlay";
-import { getColorProfile, DETECTABLE_OBJECTS, DetectableObject } from "../constants/colorProfiles";
-import { parseVoiceCommand, executeVoiceCommand, VoiceCommand } from "../services/voiceCommands";
-import { analyzeScene, askQuestion, getGreeting, SceneAnalysis } from "../services/aiAssistant";
-import { updateMotionTracking, TrackedObject, resetMotionTracking } from "../services/motionTracking";
+import {
+  getColorProfile,
+  DETECTABLE_OBJECTS,
+  DetectableObject,
+} from "../constants/colorProfiles";
+import {
+  parseVoiceCommand,
+  executeVoiceCommand,
+  VoiceCommand,
+} from "../services/voiceCommands";
+import {
+  updateMotionTracking,
+  TrackedObject,
+  resetMotionTracking,
+} from "../services/motionTracking";
 import { screenRecorder } from "../services/screenRecorder";
 
 // Export handle type for parent components to control recording
@@ -50,737 +88,731 @@ interface Props {
   onDetection?: (state: SignalState, confidence: number) => void;
 }
 
-export const CameraViewComponent = forwardRef<CameraViewHandle, Props>(function CameraViewComponent({
-  colorblindType,
-  onError,
-  onDetection,
-}, ref) {
-  const cameraRef = useRef<ExpoCameraView>(null);
-  const [permission, requestPermission] = useCameraPermissions();
-  const [currentState, setCurrentState] = useState<SignalState>("unknown");
-  const [confidence, setConfidence] = useState(0);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [detectedObjects, setDetectedObjects] = useState<TrackedObject[]>([]);
-  const [activeTargetIndex, setActiveTargetIndex] = useState(0); // For lock-on cursor cycling
-  const [isListening, setIsListening] = useState(false);
-  const [aiResponse, setAiResponse] = useState<string | null>(null);
-  const [lastFrameBase64, setLastFrameBase64] = useState<string | null>(null);
-  const [imageDimensions, setImageDimensions] = useState({ width: 640, height: 480 });
-  const [isRecordingVideo, setIsRecordingVideo] = useState(false);
-  const [recordingDuration, setRecordingDuration] = useState(0);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const frameNumberRef = useRef(0); // Track frame number for motion detection
-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const lastSpokenMessage = useRef<string>("");
-  const lastDetailsSpokenTime = useRef<number>(0);
-
-  // Expose recording controls to parent components
-  useImperativeHandle(ref, () => ({
-    startRecording: async () => {
-      if (!cameraRef.current || isRecordingVideo) return false;
-      const success = await screenRecorder.startRecording(cameraRef.current);
-      if (success) {
-        setIsRecordingVideo(true);
-        setRecordingDuration(0);
-        // Start duration timer
-        recordingTimerRef.current = setInterval(() => {
-          setRecordingDuration(prev => prev + 1);
-        }, 1000);
-      }
-      return success;
-    },
-    stopRecording: async () => {
-      if (!isRecordingVideo) return;
-      await screenRecorder.stopRecording();
-      setIsRecordingVideo(false);
-      setRecordingDuration(0);
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
-    },
-    isRecording: () => isRecordingVideo,
-  }));
-
-  // Get screen dimensions for bounding box calculations
-  const screenDimensions = Dimensions.get("window");
-
-  // Get settings from store
-  const { alertSettings, transportSettings } = useAppStore();
-
-  // Get the color profile for the user's colorblindness type
-  const colorProfile = getColorProfile(colorblindType as any);
-
-  // Reset motion tracking when component unmounts or colorblind type changes
-  useEffect(() => {
-    return () => {
-      resetMotionTracking();
-      // Cleanup recording timer
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-      }
-    };
-  }, [colorblindType]);
-
-  // Calculate frame interval based on transport mode
-  const frameInterval =
-    transportSettings.modeConfig[transportSettings.currentMode]
-      .frameProcessingIntervalMs;
-
-  // Pulse animation for listening indicator
-  useEffect(() => {
-    if (isListening) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.3,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    } else {
-      pulseAnim.setValue(1);
-    }
-  }, [isListening, pulseAnim]);
-
-  // Handle AI assistant button press
-  const handleAskAssistant = useCallback(async () => {
-    if (!lastFrameBase64) {
-      speak("I need to see something first. Please point the camera at what you want me to describe.");
-      return;
-    }
-
-    setAiResponse(null);
-    speak("Let me take a look...");
-
-    try {
-      const analysis = await analyzeScene(
-        lastFrameBase64,
-        colorblindType as ColorblindnessType,
-        {
-          transportMode: transportSettings.currentMode,
-        }
-      );
-
-      // Build response message
-      let response = analysis.description;
-
-      // Add traffic signal info if present
-      if (analysis.trafficSignals.length > 0) {
-        response += ` Traffic signal: ${analysis.trafficSignals.join(', ')}.`;
-      }
-
-      // Add hazard warnings
-      if (analysis.hazards.length > 0) {
-        response += ` Caution: ${analysis.hazards.join(', ')}.`;
-      }
-
-      // Add color warnings for colorblind users
-      if (analysis.colorWarnings.length > 0 && colorblindType !== 'normal') {
-        response += ` Note: ${analysis.colorWarnings.join('. ')}.`;
-      }
-
-      // Add suggested action
-      response += ` ${analysis.suggestedAction}`;
-
-      setAiResponse(response);
-
-      // Use ElevenLabs for AI responses if enabled
-      if (colorProfile.useElevenLabs) {
-        await speakWithElevenLabs(response);
-      } else {
-        speak(response);
-      }
-    } catch (error) {
-      console.error("AI analysis error:", error);
-      speak("Sorry, I couldn't analyze the scene. Please try again.");
-    }
-  }, [lastFrameBase64, colorblindType, transportSettings.currentMode, colorProfile.useElevenLabs]);
-
-  // Handle quick check signal
-  const handleQuickCheck = useCallback(() => {
-    if (currentState === 'unknown') {
-      speak("No traffic signal detected. Point the camera at a traffic light.");
-    } else {
-      const message = currentState === 'red'
-        ? "Red light. Stop."
-        : currentState === 'yellow'
-          ? "Yellow light. Prepare to stop."
-          : "Green light. You may proceed.";
-
-      if (colorProfile.useElevenLabs) {
-        speakWithElevenLabs(message);
-      } else {
-        speak(message);
-      }
-    }
-  }, [currentState, colorProfile.useElevenLabs]);
-
-  // Handle scene description for low vision users
-  const handleSceneDescription = useCallback(async () => {
-    if (detectedObjects.length === 0) {
-      speak("No objects detected. Point the camera at your surroundings.");
-      return;
-    }
-
-    // Prepare objects for scene description
-    const objectsForDescription = detectedObjects.slice(0, 3).map(obj => {
-      const frameArea = imageDimensions.width * imageDimensions.height;
-      const bboxArea = obj.bbox.width * obj.bbox.height;
-      const relativeSize = bboxArea / frameArea;
-
-      let size: "large" | "medium" | "small";
-      if (relativeSize > 0.05) {
-        size = "large";
-      } else if (relativeSize > 0.02) {
-        size = "medium";
-      } else {
-        size = "small";
-      }
-
-      const centerX = obj.bbox.x + obj.bbox.width / 2;
-      const frameWidth = imageDimensions.width;
-      let location: "left" | "center" | "right";
-
-      if (centerX < frameWidth * 0.3) {
-        location = "left";
-      } else if (centerX > frameWidth * 0.7) {
-        location = "right";
-      } else {
-        location = "center";
-      }
-
-      return {
-        label: obj.label,
-        size,
-        location
-      };
+export const CameraViewComponent = forwardRef<CameraViewHandle, Props>(
+  function CameraViewComponent({ colorblindType, onError, onDetection }, ref) {
+    const cameraRef = useRef<ExpoCameraView>(null);
+    const [permission, requestPermission] = useCameraPermissions();
+    const [currentState, setCurrentState] = useState<SignalState>("unknown");
+    const [confidence, setConfidence] = useState(0);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [detectedObjects, setDetectedObjects] = useState<TrackedObject[]>([]);
+    const [activeTargetIndex, setActiveTargetIndex] = useState(0); // For lock-on cursor cycling
+    const [isListening, setIsListening] = useState(false);
+    const [imageDimensions, setImageDimensions] = useState({
+      width: 640,
+      height: 480,
     });
+    const [isRecordingVideo, setIsRecordingVideo] = useState(false);
+    const [recordingDuration, setRecordingDuration] = useState(0);
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const frameNumberRef = useRef(0); // Track frame number for motion detection
+    const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const lastSpokenMessage = useRef<string>("");
+    const lastDetailsSpokenTime = useRef<number>(0);
 
-    console.log('[CameraView] 🔊 Scene description:', objectsForDescription);
-
-    try {
-      await speakSceneDescription(objectsForDescription);
-    } catch (e) {
-      console.warn("Scene description failed:", e);
-      speak("Unable to describe the scene at this time.");
-    }
-  }, [detectedObjects, imageDimensions]);
-
-  // Capture and analyze a frame
-  const captureFrame = useCallback(async () => {
-    if (!cameraRef.current || isProcessing) return;
-
-    try {
-      setIsProcessing(true);
-
-      // Capture a photo with better quality for detection
-      console.log('[CameraView] 📸 Taking snapshot...');
-      const photo = await cameraRef.current.takePictureAsync({
-        base64: true,
-        quality: 0.5,  // Fast capture for high FPS
-        skipProcessing: true,
-        shutterSound: false,
-      });
-
-      if (!photo?.base64) {
-        throw new Error("Failed to capture image");
-      }
-
-      console.log(`[CameraView] ✓ Snapshot captured: ${photo.base64.length} chars, ${photo.width}x${photo.height}`);
-
-      // Save frame for AI assistant
-      setLastFrameBase64(photo.base64);
-
-      // Send to backend for analysis with colorblind type and transport mode for enhanced detection
-      console.log('[CameraView] 🔍 Sending to detection service...');
-      const result: DetectionResponse = await detectSignal(
-        photo.base64,
-        colorblindType as ColorblindnessType,
-        transportSettings.currentMode as TransportMode
-      );
-
-      console.log(`[CameraView] ✓ Detection result: ${result.detectedObjects?.length || 0} objects, state: ${result.state}`);
-
-      // Update state
-      setCurrentState(result.state);
-      setConfidence(result.confidence);
-
-      // Update image dimensions from result if available
-      if (result.imageWidth && result.imageHeight) {
-        setImageDimensions({
-          width: result.imageWidth,
-          height: result.imageHeight
-        });
-      }
-
-      // Update detected objects for bounding box overlay with motion tracking
-      if (result.detectedObjects && result.detectedObjects.length > 0) {
-        console.log(`[CameraView] Objects detected:`, result.detectedObjects.map(o => `${o.label} (${Math.round(o.confidence * 100)}%)`));
-        // Apply motion tracking to identify moving objects
-        frameNumberRef.current++;
-        const trackedObjects = updateMotionTracking(result.detectedObjects, frameNumberRef.current);
-        setDetectedObjects(trackedObjects);
-
-        // Update recording stats if recording
-        if (isRecordingVideo) {
-          screenRecorder.updateDetectionStats(result.detectedObjects);
+    // Expose recording controls to parent components
+    useImperativeHandle(ref, () => ({
+      startRecording: async () => {
+        if (!cameraRef.current || isRecordingVideo) return false;
+        const success = await screenRecorder.startRecording(cameraRef.current);
+        if (success) {
+          setIsRecordingVideo(true);
+          setRecordingDuration(0);
+          // Start duration timer
+          recordingTimerRef.current = setInterval(() => {
+            setRecordingDuration((prev) => prev + 1);
+          }, 1000);
         }
-
-        // VOICE ALERTS: Different behavior for low_vision vs color-based modes
-        if (colorblindType === 'low_vision') {
-          // LOW VISION MODE: Proximity-based alerts (size = closeness)
-          const frameArea = (result.imageWidth || imageDimensions.width) * (result.imageHeight || imageDimensions.height);
-
-          for (const obj of result.detectedObjects) {
-            const bboxArea = obj.bbox.width * obj.bbox.height;
-            const relativeSize = bboxArea / frameArea;
-
-            // Determine distance category based on object size
-            let distance: "very close" | "close" | "moderate" | "far" | null = null;
-
-            if (relativeSize > 0.10) {
-              distance = "very close"; // >10% of frame = very close
-            } else if (relativeSize > 0.05) {
-              distance = "close"; // >5% = close
-            } else if (relativeSize > 0.02) {
-              distance = "moderate"; // >2% = moderate distance
-            } else if (relativeSize > 0.005) {
-              distance = "far"; // >0.5% = far but notable
-            }
-
-            // Only alert for objects that are close enough to matter
-            if (distance && (distance === "very close" || distance === "close" || obj.alertPriority === "critical")) {
-              // Determine direction from bbox position
-              const centerX = obj.bbox.x + obj.bbox.width / 2;
-              const frameWidth = result.imageWidth || imageDimensions.width;
-              let direction: string | undefined;
-
-              if (centerX < frameWidth * 0.3) {
-                direction = "left";
-              } else if (centerX > frameWidth * 0.7) {
-                direction = "right";
-              } else {
-                direction = "ahead";
-              }
-
-              // Construct unique key for this alert
-              const alertKey = `${obj.label}-${distance}-${direction || 'unknown'}`;
-              const now = Date.now();
-
-              // Repeat if different message OR same message after 2 seconds
-              if (alertKey !== lastSpokenMessage.current || now - lastDetailsSpokenTime.current > 2000) {
-                console.log(`[CameraView] 🔊 Low vision alert: ${obj.label} ${distance} ${direction} (${(relativeSize * 100).toFixed(1)}% of frame)`);
-
-                try {
-                  await speakProximityAlert(obj.label, distance, direction as any);
-                  lastSpokenMessage.current = alertKey;
-                  lastDetailsSpokenTime.current = now;
-                } catch (e) {
-                  console.warn("Proximity alert failed:", e);
-                }
-              }
-
-              // Only alert the most urgent object to avoid spam
-              break;
-            }
-          }
-        } else {
-          // STANDARD MODE: Color-based alerts for problematic colors
-          // This is the ONLY place color voice alerts should trigger in the app
-          const problematicObjects = result.detectedObjects.filter(
-            obj => obj.isProblematicColor && obj.alertPriority !== 'none'
-          );
-
-          if (problematicObjects.length > 0 && result.confidence >= alertSettings.minConfidenceToAlert) {
-            // Generate alert message for problematic colors
-            const alertMessage = generateColorAlert(problematicObjects);
-            const now = Date.now();
-
-            // Repeat if different message OR same message after 2 seconds
-            if (alertMessage !== lastSpokenMessage.current || now - lastDetailsSpokenTime.current > 2000) {
-              try {
-                // Use ElevenLabs for more natural voice
-                await speakWithElevenLabs(alertMessage);
-              } catch (e) {
-                // Fallback to alert speech (always plays, ignores alertsOnlyMode)
-                console.warn("ElevenLabs failed, using fallback:", e);
-                speakAlert(alertMessage);
-              }
-              lastSpokenMessage.current = alertMessage;
-              lastDetailsSpokenTime.current = now;
-            }
-          }
+        return success;
+      },
+      stopRecording: async () => {
+        if (!isRecordingVideo) return;
+        await screenRecorder.stopRecording();
+        setIsRecordingVideo(false);
+        setRecordingDuration(0);
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
         }
+      },
+      isRecording: () => isRecordingVideo,
+    }));
+
+    // Get screen dimensions for bounding box calculations
+    const screenDimensions = Dimensions.get("window");
+
+    // Get settings from store
+    const { alertSettings, transportSettings } = useAppStore();
+
+    // Get the color profile for the user's colorblindness type
+    const colorProfile = getColorProfile(colorblindType as any);
+
+    // Reset motion tracking when component unmounts or colorblind type changes
+    useEffect(() => {
+      return () => {
+        resetMotionTracking();
+        // Cleanup recording timer
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+        }
+      };
+    }, [colorblindType]);
+
+    // Calculate frame interval based on transport mode
+    const frameInterval =
+      transportSettings.modeConfig[transportSettings.currentMode]
+        .frameProcessingIntervalMs;
+
+    // Pulse animation for listening indicator
+    useEffect(() => {
+      if (isListening) {
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulseAnim, {
+              toValue: 1.3,
+              duration: 500,
+              useNativeDriver: true,
+            }),
+            Animated.timing(pulseAnim, {
+              toValue: 1,
+              duration: 500,
+              useNativeDriver: true,
+            }),
+          ]),
+        ).start();
       } else {
-        setDetectedObjects([]);
+        pulseAnim.setValue(1);
       }
+    }, [isListening, pulseAnim]);
 
-      // Notify parent component
-      onDetection?.(result.state, result.confidence);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Detection failed";
+    // Handle quick check signal
+    const handleQuickCheck = useCallback(() => {
+      if (currentState === "unknown") {
+        speak(
+          "No traffic signal detected. Point the camera at a traffic light.",
+        );
+      } else {
+        const message =
+          currentState === "red"
+            ? "Red light. Stop."
+            : currentState === "yellow"
+              ? "Yellow light. Prepare to stop."
+              : "Green light. You may proceed.";
 
-      // Suppress specific benign error reported by user
-      if (errorMessage.includes("Image could not be captured")) {
-        // console.log("[CameraView] Benign capture error suppressed");
+        if (colorProfile.useElevenLabs) {
+          speakWithElevenLabs(message);
+        } else {
+          speak(message);
+        }
+      }
+    }, [currentState, colorProfile.useElevenLabs]);
+
+    // Handle scene description for low vision users
+    const handleSceneDescription = useCallback(async () => {
+      if (detectedObjects.length === 0) {
+        speak("No objects detected. Point the camera at your surroundings.");
         return;
       }
 
-      console.error("Capture error:", error);
-      onError?.(errorMessage);
-    } finally {
-      setIsProcessing(false);
-    }
-  }, [
-    isProcessing,
-    colorblindType,
-    colorProfile.useElevenLabs,
-    onError,
-    onDetection,
-    alertSettings.minConfidenceToAlert,
-    alertSettings.positionCuesEnabled,
-  ]);
+      // Prepare objects for scene description
+      const objectsForDescription = detectedObjects.slice(0, 3).map((obj) => {
+        const frameArea = imageDimensions.width * imageDimensions.height;
+        const bboxArea = obj.bbox.width * obj.bbox.height;
+        const relativeSize = bboxArea / frameArea;
 
-  // Generate descriptive alert for objects with problematic colors
-  const generateColorAlert = (objects: DetectedObject[]): string => {
-    // Sort by priority - critical first
-    const sorted = objects.sort((a, b) => {
-      const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3, none: 4 };
-      return (priorityOrder[a.alertPriority] || 4) - (priorityOrder[b.alertPriority] || 4);
-    });
+        let size: "large" | "medium" | "small";
+        if (relativeSize > 0.05) {
+          size = "large";
+        } else if (relativeSize > 0.02) {
+          size = "medium";
+        } else {
+          size = "small";
+        }
 
-    const topObject = sorted[0];
+        const centerX = obj.bbox.x + obj.bbox.width / 2;
+        const frameWidth = imageDimensions.width;
+        let location: "left" | "center" | "right";
 
-    // Use color warning if available, otherwise generate from label and colors
-    if (topObject.colorWarning) {
-      return topObject.colorWarning;
-    }
+        if (centerX < frameWidth * 0.3) {
+          location = "left";
+        } else if (centerX > frameWidth * 0.7) {
+          location = "right";
+        } else {
+          location = "center";
+        }
 
-    // Generate alert based on detected colors
-    const colors = topObject.colors?.join(', ') || 'colored';
-    const label = topObject.label || topObject.class || 'object';
+        return {
+          label: obj.label,
+          size,
+          location,
+        };
+      });
 
-    // Specific alerts for known objects
-    if (label.toLowerCase().includes('traffic light') || label.toLowerCase().includes('signal')) {
-      const color = topObject.colors?.[0] || 'unknown';
-      if (color.toLowerCase().includes('red')) {
-        return "Red traffic light ahead. Stop.";
-      } else if (color.toLowerCase().includes('yellow')) {
-        return "Yellow light. Prepare to stop.";
-      } else if (color.toLowerCase().includes('green')) {
-        return "Green light. You may go.";
+      console.log("[CameraView] 🔊 Scene description:", objectsForDescription);
+
+      try {
+        await speakSceneDescription(objectsForDescription);
+      } catch (e) {
+        console.warn("Scene description failed:", e);
+        speak("Unable to describe the scene at this time.");
       }
-    }
+    }, [detectedObjects, imageDimensions]);
 
-    if (label.toLowerCase().includes('stop sign')) {
-      return "Stop sign ahead. Come to a complete stop.";
-    }
+    // Capture and analyze a frame
+    const captureFrame = useCallback(async () => {
+      if (!cameraRef.current || isProcessing) return;
 
-    if (label.toLowerCase().includes('car') || label.toLowerCase().includes('vehicle')) {
-      const color = topObject.colors?.[0] || '';
-      if (color.toLowerCase().includes('red')) {
-        return "Brake lights ahead. Slow down.";
+      try {
+        setIsProcessing(true);
+
+        // Capture a photo with better quality for detection
+        console.log("[CameraView] 📸 Taking snapshot...");
+        const photo = await cameraRef.current.takePictureAsync({
+          base64: true,
+          quality: 0.5, // Fast capture for high FPS
+          skipProcessing: true,
+          shutterSound: false,
+        });
+
+        if (!photo?.base64) {
+          throw new Error("Failed to capture image");
+        }
+
+        console.log(
+          `[CameraView] ✓ Snapshot captured: ${photo.base64.length} chars, ${photo.width}x${photo.height}`,
+        );
+
+        // Send to backend for analysis with colorblind type and transport mode for enhanced detection
+        console.log("[CameraView] 🔍 Sending to detection service...");
+        const result: DetectionResponse = await detectSignal(
+          photo.base64,
+          colorblindType as ColorblindnessType,
+          transportSettings.currentMode as TransportMode,
+        );
+
+        console.log(
+          `[CameraView] ✓ Detection result: ${result.detectedObjects?.length || 0} objects, state: ${result.state}`,
+        );
+
+        // Update state
+        setCurrentState(result.state);
+        setConfidence(result.confidence);
+
+        // Update image dimensions from result if available
+        if (result.imageWidth && result.imageHeight) {
+          setImageDimensions({
+            width: result.imageWidth,
+            height: result.imageHeight,
+          });
+        }
+
+        // Update detected objects for bounding box overlay with motion tracking
+        if (result.detectedObjects && result.detectedObjects.length > 0) {
+          console.log(
+            `[CameraView] Objects detected:`,
+            result.detectedObjects.map(
+              (o) => `${o.label} (${Math.round(o.confidence * 100)}%)`,
+            ),
+          );
+          // Apply motion tracking to identify moving objects
+          frameNumberRef.current++;
+          const trackedObjects = updateMotionTracking(
+            result.detectedObjects,
+            frameNumberRef.current,
+          );
+          setDetectedObjects(trackedObjects);
+
+          // Update recording stats if recording
+          if (isRecordingVideo) {
+            screenRecorder.updateDetectionStats(result.detectedObjects);
+          }
+
+          // VOICE ALERTS: Different behavior for low_vision vs color-based modes
+          if (colorblindType === "low_vision") {
+            // LOW VISION MODE: Proximity-based alerts (size = closeness)
+            const frameArea =
+              (result.imageWidth || imageDimensions.width) *
+              (result.imageHeight || imageDimensions.height);
+
+            for (const obj of result.detectedObjects) {
+              const bboxArea = obj.bbox.width * obj.bbox.height;
+              const relativeSize = bboxArea / frameArea;
+
+              // Determine distance category based on object size
+              let distance: "very close" | "close" | "moderate" | "far" | null =
+                null;
+
+              if (relativeSize > 0.1) {
+                distance = "very close"; // >10% of frame = very close
+              } else if (relativeSize > 0.05) {
+                distance = "close"; // >5% = close
+              } else if (relativeSize > 0.02) {
+                distance = "moderate"; // >2% = moderate distance
+              } else if (relativeSize > 0.005) {
+                distance = "far"; // >0.5% = far but notable
+              }
+
+              // Only alert for objects that are close enough to matter
+              if (
+                distance &&
+                (distance === "very close" ||
+                  distance === "close" ||
+                  obj.alertPriority === "critical")
+              ) {
+                // Determine direction from bbox position
+                const centerX = obj.bbox.x + obj.bbox.width / 2;
+                const frameWidth = result.imageWidth || imageDimensions.width;
+                let direction: string | undefined;
+
+                if (centerX < frameWidth * 0.3) {
+                  direction = "left";
+                } else if (centerX > frameWidth * 0.7) {
+                  direction = "right";
+                } else {
+                  direction = "ahead";
+                }
+
+                // Construct unique key for this alert
+                const alertKey = `${obj.label}-${distance}-${direction || "unknown"}`;
+                const now = Date.now();
+
+                // Repeat if different message OR same message after 2 seconds
+                if (
+                  alertKey !== lastSpokenMessage.current ||
+                  now - lastDetailsSpokenTime.current > 2000
+                ) {
+                  console.log(
+                    `[CameraView] 🔊 Low vision alert: ${obj.label} ${distance} ${direction} (${(relativeSize * 100).toFixed(1)}% of frame)`,
+                  );
+
+                  try {
+                    await speakProximityAlert(
+                      obj.label,
+                      distance,
+                      direction as any,
+                    );
+                    lastSpokenMessage.current = alertKey;
+                    lastDetailsSpokenTime.current = now;
+                  } catch (e) {
+                    console.warn("Proximity alert failed:", e);
+                  }
+                }
+
+                // Only alert the most urgent object to avoid spam
+                break;
+              }
+            }
+          } else {
+            // STANDARD MODE: Color-based alerts for problematic colors
+            // This is the ONLY place color voice alerts should trigger in the app
+            const problematicObjects = result.detectedObjects.filter(
+              (obj) => obj.isProblematicColor && obj.alertPriority !== "none",
+            );
+
+            if (
+              problematicObjects.length > 0 &&
+              result.confidence >= alertSettings.minConfidenceToAlert
+            ) {
+              // Generate alert message for problematic colors
+              const alertMessage = generateColorAlert(problematicObjects);
+              const now = Date.now();
+
+              // Repeat if different message OR same message after 2 seconds
+              if (
+                alertMessage !== lastSpokenMessage.current ||
+                now - lastDetailsSpokenTime.current > 2000
+              ) {
+                try {
+                  // Use ElevenLabs for more natural voice
+                  await speakWithElevenLabs(alertMessage);
+                } catch (e) {
+                  // Fallback to alert speech (always plays, ignores alertsOnlyMode)
+                  console.warn("ElevenLabs failed, using fallback:", e);
+                  speakAlert(alertMessage);
+                }
+                lastSpokenMessage.current = alertMessage;
+                lastDetailsSpokenTime.current = now;
+              }
+            }
+          }
+        } else {
+          setDetectedObjects([]);
+        }
+
+        // Notify parent component
+        onDetection?.(result.state, result.confidence);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Detection failed";
+
+        // Suppress specific benign error reported by user
+        if (errorMessage.includes("Image could not be captured")) {
+          // console.log("[CameraView] Benign capture error suppressed");
+          return;
+        }
+
+        console.error("Capture error:", error);
+        onError?.(errorMessage);
+      } finally {
+        setIsProcessing(false);
       }
-    }
+    }, [
+      isProcessing,
+      colorblindType,
+      colorProfile.useElevenLabs,
+      onError,
+      onDetection,
+      alertSettings.minConfidenceToAlert,
+      alertSettings.positionCuesEnabled,
+    ]);
 
-    // Generic alert for other objects
-    return `${colors} ${label} detected ahead.`;
-  };
+    // Generate descriptive alert for objects with problematic colors
+    const generateColorAlert = (objects: DetectedObject[]): string => {
+      // Sort by priority - critical first
+      const sorted = objects.sort((a, b) => {
+        const priorityOrder = {
+          critical: 0,
+          high: 1,
+          medium: 2,
+          low: 3,
+          none: 4,
+        };
+        return (
+          (priorityOrder[a.alertPriority] || 4) -
+          (priorityOrder[b.alertPriority] || 4)
+        );
+      });
 
-  // Start capture interval - always active (no pause)
-  useEffect(() => {
-    if (permission?.granted) {
-      resetSpeechState();
-      captureIntervalRef.current = setInterval(captureFrame, frameInterval);
-    }
+      const topObject = sorted[0];
 
-    return () => {
-      if (captureIntervalRef.current) {
-        clearInterval(captureIntervalRef.current);
-        captureIntervalRef.current = null;
+      // Use color warning if available, otherwise generate from label and colors
+      if (topObject.colorWarning) {
+        return topObject.colorWarning;
       }
+
+      // Generate alert based on detected colors
+      const colors = topObject.colors?.join(", ") || "colored";
+      const label = topObject.label || topObject.class || "object";
+
+      // Specific alerts for known objects
+      if (
+        label.toLowerCase().includes("traffic light") ||
+        label.toLowerCase().includes("signal")
+      ) {
+        const color = topObject.colors?.[0] || "unknown";
+        if (color.toLowerCase().includes("red")) {
+          return "Red traffic light ahead. Stop.";
+        } else if (color.toLowerCase().includes("yellow")) {
+          return "Yellow light. Prepare to stop.";
+        } else if (color.toLowerCase().includes("green")) {
+          return "Green light. You may go.";
+        }
+      }
+
+      if (label.toLowerCase().includes("stop sign")) {
+        return "Stop sign ahead. Come to a complete stop.";
+      }
+
+      if (
+        label.toLowerCase().includes("car") ||
+        label.toLowerCase().includes("vehicle")
+      ) {
+        const color = topObject.colors?.[0] || "";
+        if (color.toLowerCase().includes("red")) {
+          return "Brake lights ahead. Slow down.";
+        }
+      }
+
+      // Generic alert for other objects
+      return `${colors} ${label} detected ahead.`;
     };
-  }, [permission?.granted, captureFrame, frameInterval]);
 
-  // Auto-lock on highest priority target (moving objects or threats)
-  useEffect(() => {
-    if (detectedObjects.length === 0) {
-      setActiveTargetIndex(0);
-      return;
-    }
-
-    // Calculate priority score for each object
-    // Priority order: Moving objects > Critical alerts > High alerts > Medium alerts > Others
-    const getPriorityScore = (obj: TrackedObject): number => {
-      let score = 0;
-
-      // Moving objects get highest priority
-      if (obj.isMoving) {
-        score += 1000;
-        // Add velocity magnitude for moving objects
-        const velocityMag = Math.sqrt(obj.velocity.x ** 2 + obj.velocity.y ** 2);
-        score += velocityMag * 10;
+    // Start capture interval - always active (no pause)
+    useEffect(() => {
+      if (permission?.granted) {
+        resetSpeechState();
+        captureIntervalRef.current = setInterval(captureFrame, frameInterval);
       }
 
-      // Alert priority scoring
-      const priorityOrder: Record<string, number> = {
-        critical: 500,
-        high: 200,
-        medium: 50,
-        low: 10,
-        none: 0,
+      return () => {
+        if (captureIntervalRef.current) {
+          clearInterval(captureIntervalRef.current);
+          captureIntervalRef.current = null;
+        }
       };
-      score += priorityOrder[obj.alertPriority] || 0;
+    }, [permission?.granted, captureFrame, frameInterval]);
 
-      // Problematic colors get bonus
-      if (obj.isProblematicColor) {
-        score += 100;
+    // Auto-lock on highest priority target (moving objects or threats)
+    useEffect(() => {
+      if (detectedObjects.length === 0) {
+        setActiveTargetIndex(0);
+        return;
       }
 
-      // Confidence bonus
-      score += obj.confidence * 10;
+      // Calculate priority score for each object
+      // Priority order: Moving objects > Critical alerts > High alerts > Medium alerts > Others
+      const getPriorityScore = (obj: TrackedObject): number => {
+        let score = 0;
 
-      return score;
+        // Moving objects get highest priority
+        if (obj.isMoving) {
+          score += 1000;
+          // Add velocity magnitude for moving objects
+          const velocityMag = Math.sqrt(
+            obj.velocity.x ** 2 + obj.velocity.y ** 2,
+          );
+          score += velocityMag * 10;
+        }
+
+        // Alert priority scoring
+        const priorityOrder: Record<string, number> = {
+          critical: 500,
+          high: 200,
+          medium: 50,
+          low: 10,
+          none: 0,
+        };
+        score += priorityOrder[obj.alertPriority] || 0;
+
+        // Problematic colors get bonus
+        if (obj.isProblematicColor) {
+          score += 100;
+        }
+
+        // Confidence bonus
+        score += obj.confidence * 10;
+
+        return score;
+      };
+
+      // Find the highest priority target
+      let bestIndex = 0;
+      let bestScore = getPriorityScore(detectedObjects[0]);
+
+      for (let i = 1; i < detectedObjects.length; i++) {
+        const score = getPriorityScore(detectedObjects[i]);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = i;
+        }
+      }
+
+      setActiveTargetIndex(bestIndex);
+    }, [detectedObjects]);
+
+    // Get display info based on state
+    const getStateColor = () => {
+      switch (currentState) {
+        case "red":
+          return COLORS.red;
+        case "yellow":
+          return COLORS.yellow;
+        case "green":
+          return COLORS.green;
+        default:
+          return COLORS.unknown;
+      }
     };
 
-    // Find the highest priority target
-    let bestIndex = 0;
-    let bestScore = getPriorityScore(detectedObjects[0]);
-
-    for (let i = 1; i < detectedObjects.length; i++) {
-      const score = getPriorityScore(detectedObjects[i]);
-      if (score > bestScore) {
-        bestScore = score;
-        bestIndex = i;
+    const getStateLabel = () => {
+      switch (currentState) {
+        case "red":
+          return "RED";
+        case "yellow":
+          return "YELLOW";
+        case "green":
+          return "GREEN";
+        default:
+          return ""; // No label when not detecting a signal
       }
-    }
+    };
 
-    setActiveTargetIndex(bestIndex);
-  }, [detectedObjects]);
+    const getActionText = () => {
+      if (currentState === "unknown") {
+        return "Point camera at traffic light";
+      }
+      // Use position cues based on settings
+      return getSignalMessage(
+        currentState,
+        alertSettings.positionCuesEnabled ? "protanopia" : "normal",
+      );
+    };
 
-  // Get display info based on state
-  const getStateColor = () => {
-    switch (currentState) {
-      case "red":
-        return COLORS.red;
-      case "yellow":
-        return COLORS.yellow;
-      case "green":
-        return COLORS.green;
-      default:
-        return COLORS.unknown;
-    }
-  };
+    // Get shape indicator for colorblind users
+    const getShapeIndicator = () => {
+      if (!alertSettings.shapeCuesEnabled) return null;
 
-  const getStateLabel = () => {
-    switch (currentState) {
-      case "red":
-        return "RED";
-      case "yellow":
-        return "YELLOW";
-      case "green":
-        return "GREEN";
-      default:
-        return ""; // No label when not detecting a signal
-    }
-  };
-
-  const getActionText = () => {
-    if (currentState === "unknown") {
-      return "Point camera at traffic light";
-    }
-    // Use position cues based on settings
-    return getSignalMessage(
-      currentState,
-      alertSettings.positionCuesEnabled ? "protanopia" : "normal"
-    );
-  };
-
-  // Get shape indicator for colorblind users
-  const getShapeIndicator = () => {
-    if (!alertSettings.shapeCuesEnabled) return null;
-
-    switch (currentState) {
-      case "red":
-        return <View style={[styles.shapeSquare, { backgroundColor: COLORS.red }]} />;
-      case "yellow":
-        return <View style={[styles.shapeCircle, { backgroundColor: COLORS.yellow }]} />;
-      case "green":
-        return <View style={[styles.shapeTriangle, { borderBottomColor: COLORS.green }]} />;
-      default:
-        return null;
-    }
-  };
-
-  // Handle permissions
-  if (!permission) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.message}>Checking camera permission...</Text>
-      </View>
-    );
-  }
-
-  if (!permission.granted) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.message}>
-          TrueLight needs camera access to detect traffic signals and help keep you
-          safe.
-        </Text>
-        <Pressable
-          style={styles.permissionButton}
-          onPress={requestPermission}
-          accessibilityRole="button"
-          accessibilityLabel="Grant camera permission"
-        >
-          <Text style={styles.permissionButtonText}>Enable Camera</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
-  const stateColor = getStateColor();
-
-  return (
-    <View style={styles.container}>
-      {/* Camera preview - full screen for dashcam mode */}
-      <ExpoCameraView
-        ref={cameraRef}
-        style={styles.camera}
-        facing="back"
-        flash="off"
-        enableTorch={false}
-      >
-        {/* Bounding box overlay for detected objects with auto-targeting */}
-        <BoundingBoxOverlay
-          objects={detectedObjects}
-          imageWidth={imageDimensions.width}
-          imageHeight={imageDimensions.height}
-          containerWidth={screenDimensions.width}
-          containerHeight={screenDimensions.height}
-          activeTargetIndex={activeTargetIndex}
-          colorblindType={colorblindType as ColorblindnessType}
-          transportMode={transportSettings.currentMode}
-        />
-
-        {/* Minimal HUD overlay - only show when signal detected */}
-        {currentState !== "unknown" && (
-          <View style={styles.hudOverlay}>
-            <View style={styles.hudRow}>
-              {getShapeIndicator()}
-              <View
-                style={[styles.hudSignal, { backgroundColor: stateColor }]}
-              >
-                <Text style={styles.hudSignalText}>{getStateLabel()}</Text>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* Processing indicator - top right dot */}
-        {isProcessing && (
-          <View style={styles.processingIndicator}>
+      switch (currentState) {
+        case "red":
+          return (
             <View
-              style={[styles.processingDot, { backgroundColor: COLORS.accent }]}
+              style={[styles.shapeSquare, { backgroundColor: COLORS.red }]}
             />
-          </View>
-        )}
-
-        {/* Recording indicator with timer */}
-        {isRecordingVideo && (
-          <View style={styles.recordingOverlay}>
-            <View style={styles.recordingDotLarge} />
-            <Text style={styles.recordingTimer}>
-              {Math.floor(recordingDuration / 60).toString().padStart(2, '0')}:
-              {(recordingDuration % 60).toString().padStart(2, '0')}
-            </Text>
-          </View>
-        )}
-
-        {/* Confidence bar - subtle at bottom */}
-        {currentState !== "unknown" && (
-          <View style={styles.confidenceBar}>
+          );
+        case "yellow":
+          return (
+            <View
+              style={[styles.shapeCircle, { backgroundColor: COLORS.yellow }]}
+            />
+          );
+        case "green":
+          return (
             <View
               style={[
-                styles.confidenceFill,
-                {
-                  width: `${confidence * 100}%`,
-                  backgroundColor: stateColor,
-                },
+                styles.shapeTriangle,
+                { borderBottomColor: COLORS.green },
               ]}
             />
-          </View>
-        )}
+          );
+        default:
+          return null;
+      }
+    };
 
-        {/* Object count - minimal badge */}
-        {detectedObjects.length > 0 && (
-          <View style={styles.objectCountBadge}>
-            <Text style={styles.objectCountText}>
-              {detectedObjects.length}
+    // Handle permissions
+    if (!permission) {
+      return (
+        <View style={styles.container}>
+          <Text style={styles.message}>Checking camera permission...</Text>
+        </View>
+      );
+    }
+
+    if (!permission.granted) {
+      return (
+        <View style={styles.container}>
+          <Text style={styles.message}>
+            TrueLight needs camera access to detect traffic signals and help
+            keep you safe.
+          </Text>
+          <Pressable
+            style={styles.permissionButton}
+            onPress={requestPermission}
+            accessibilityRole="button"
+            accessibilityLabel="Grant camera permission"
+          >
+            <Text style={styles.permissionButtonText}>Enable Camera</Text>
+          </Pressable>
+        </View>
+      );
+    }
+
+    const stateColor = getStateColor();
+
+    return (
+      <View style={styles.container}>
+        {/* Camera preview - full screen for dashcam mode */}
+        <ExpoCameraView
+          ref={cameraRef}
+          style={styles.camera}
+          facing="back"
+          flash="off"
+          enableTorch={false}
+        >
+          {/* Bounding box overlay for detected objects with auto-targeting */}
+          <BoundingBoxOverlay
+            objects={detectedObjects}
+            imageWidth={imageDimensions.width}
+            imageHeight={imageDimensions.height}
+            containerWidth={screenDimensions.width}
+            containerHeight={screenDimensions.height}
+            activeTargetIndex={activeTargetIndex}
+            colorblindType={colorblindType as ColorblindnessType}
+            transportMode={transportSettings.currentMode}
+          />
+
+          {/* Minimal HUD overlay - only show when signal detected */}
+          {currentState !== "unknown" && (
+            <View style={styles.hudOverlay}>
+              <View style={styles.hudRow}>
+                {getShapeIndicator()}
+                <View
+                  style={[styles.hudSignal, { backgroundColor: stateColor }]}
+                >
+                  <Text style={styles.hudSignalText}>{getStateLabel()}</Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Processing indicator - top right dot */}
+          {isProcessing && (
+            <View style={styles.processingIndicator}>
+              <View
+                style={[
+                  styles.processingDot,
+                  { backgroundColor: COLORS.accent },
+                ]}
+              />
+            </View>
+          )}
+
+          {/* Recording indicator with timer */}
+          {isRecordingVideo && (
+            <View style={styles.recordingOverlay}>
+              <View style={styles.recordingDotLarge} />
+              <Text style={styles.recordingTimer}>
+                {Math.floor(recordingDuration / 60)
+                  .toString()
+                  .padStart(2, "0")}
+                :{(recordingDuration % 60).toString().padStart(2, "0")}
+              </Text>
+            </View>
+          )}
+
+          {/* Confidence bar - subtle at bottom */}
+          {currentState !== "unknown" && (
+            <View style={styles.confidenceBar}>
+              <View
+                style={[
+                  styles.confidenceFill,
+                  {
+                    width: `${confidence * 100}%`,
+                    backgroundColor: stateColor,
+                  },
+                ]}
+              />
+            </View>
+          )}
+
+          {/* Object count - minimal badge */}
+          {detectedObjects.length > 0 && (
+            <View style={styles.objectCountBadge}>
+              <Text style={styles.objectCountText}>
+                {detectedObjects.length}
+              </Text>
+            </View>
+          )}
+
+          {/* Low vision scene description button */}
+          {colorblindType === "low_vision" && detectedObjects.length > 0 && (
+            <Pressable
+              style={styles.sceneDescriptionButton}
+              onPress={handleSceneDescription}
+              accessibilityRole="button"
+              accessibilityLabel="Describe scene"
+            >
+              <Text style={styles.sceneDescriptionIcon}>🔊</Text>
+              <Text style={styles.sceneDescriptionText}>Describe Scene</Text>
+            </Pressable>
+          )}
+        </ExpoCameraView>
+
+        {/* Lock-on status indicator */}
+        <View style={styles.controlOverlay}>
+          <View style={styles.lockOnIndicator}>
+            <Text style={styles.lockOnText}>
+              {detectedObjects.length > 0
+                ? `◎ ${activeTargetIndex + 1}/${detectedObjects.length}`
+                : "○ SCANNING"}
             </Text>
           </View>
-        )}
-
-        {/* AI Response overlay */}
-        {aiResponse && (
-          <View style={styles.aiResponseOverlay}>
-            <Text style={styles.aiResponseText}>{aiResponse}</Text>
-            <Pressable
-              style={styles.dismissButton}
-              onPress={() => setAiResponse(null)}
-            >
-              <Text style={styles.dismissButtonText}>✕</Text>
-            </Pressable>
-          </View>
-        )}
-
-        {/* Low vision scene description button */}
-        {colorblindType === 'low_vision' && detectedObjects.length > 0 && (
-          <Pressable
-            style={styles.sceneDescriptionButton}
-            onPress={handleSceneDescription}
-            accessibilityRole="button"
-            accessibilityLabel="Describe scene"
-          >
-            <Text style={styles.sceneDescriptionIcon}>🔊</Text>
-            <Text style={styles.sceneDescriptionText}>Describe Scene</Text>
-          </Pressable>
-        )}
-
-        {/* AI Assistant button */}
-        <Pressable
-          style={styles.aiAssistantButton}
-          onPress={handleAskAssistant}
-          accessibilityRole="button"
-          accessibilityLabel="Ask AI assistant"
-        >
-          <Text style={styles.aiAssistantIcon}>🤖</Text>
-          <Text style={styles.aiAssistantText}>Ask AI</Text>
-        </Pressable>
-      </ExpoCameraView>
-
-      {/* Lock-on status indicator */}
-      <View style={styles.controlOverlay}>
-        <View style={styles.lockOnIndicator}>
-          <Text style={styles.lockOnText}>
-            {detectedObjects.length > 0
-              ? `◎ ${activeTargetIndex + 1}/${detectedObjects.length}`
-              : "○ SCANNING"}
-          </Text>
         </View>
       </View>
-    </View>
-  );
-});
+    );
+  },
+);
 
 const styles = StyleSheet.create({
   container: {
@@ -920,31 +952,6 @@ const styles = StyleSheet.create({
     fontSize: SIZES.textMedium,
     fontWeight: "bold",
   },
-  aiResponseOverlay: {
-    position: "absolute",
-    bottom: 100,
-    left: 20,
-    right: 20,
-    backgroundColor: "rgba(0, 0, 0, 0.85)",
-    padding: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  aiResponseText: {
-    color: COLORS.textPrimary,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  dismissButton: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    padding: 4,
-  },
-  dismissButtonText: {
-    color: COLORS.textSecondary,
-    fontSize: 16,
-  },
   recordingOverlay: {
     position: "absolute",
     top: 20,
@@ -987,28 +994,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   sceneDescriptionText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  aiAssistantButton: {
-    position: "absolute",
-    bottom: 200,
-    right: 20,
-    backgroundColor: "rgba(76, 175, 80, 0.9)",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.3)",
-  },
-  aiAssistantIcon: {
-    fontSize: 18,
-  },
-  aiAssistantText: {
     color: "#fff",
     fontSize: 14,
     fontWeight: "600",

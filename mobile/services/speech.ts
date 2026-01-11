@@ -16,7 +16,7 @@
  */
 
 import * as Speech from "expo-speech";
-import { Audio } from 'expo-av';
+import { Audio } from "expo-av";
 import {
   SignalState,
   ColorblindnessType,
@@ -53,10 +53,24 @@ interface ElevenLabsConfig {
   voiceId: string;
 }
 
-let elevenLabsConfig: ElevenLabsConfig | null = null;
+// Auto-configure ElevenLabs from environment variables
+const ELEVENLABS_API_KEY = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY || "";
+// "Rachel" - clear, natural female voice good for alerts
+const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+
+let elevenLabsConfig: ElevenLabsConfig | null = ELEVENLABS_API_KEY
+  ? { apiKey: ELEVENLABS_API_KEY, voiceId: DEFAULT_VOICE_ID }
+  : null;
 
 // Audio player instance for ElevenLabs
 let soundObject: Audio.Sound | null = null;
+
+// Log ElevenLabs status on load
+if (elevenLabsConfig) {
+  console.log("[Speech] ElevenLabs configured with voice:", DEFAULT_VOICE_ID);
+} else {
+  console.log("[Speech] ElevenLabs not configured, using Expo Speech");
+}
 
 // Initialize audio mode
 Audio.setAudioModeAsync({
@@ -88,7 +102,7 @@ export async function speakSignalState(
   state: SignalState,
   colorblindType: ColorblindnessType,
   usePositionCues: boolean = true,
-  force = false
+  force = false,
 ): Promise<void> {
   const now = Date.now();
 
@@ -153,72 +167,86 @@ function speakWithExpo(message: string, state?: SignalState): void {
  */
 export async function speakWithElevenLabs(
   message: string,
-  state?: SignalState
+  state?: SignalState,
 ): Promise<void> {
   if (!elevenLabsConfig) {
-    // Fallback to Expo Speech if not configured
+    console.log("[ElevenLabs] Not configured, using Expo Speech");
     speakWithExpo(message, state);
     return;
   }
 
   try {
-    // Stop any currently playing audio
+    // Cleanup previous sound if exists
     if (soundObject) {
-      await soundObject.stopAsync();
-      await soundObject.unloadAsync();
+      try {
+        await soundObject.unloadAsync();
+      } catch (e) {
+        // Ignore cleanup errors
+      }
       soundObject = null;
     }
 
-    console.log('[ElevenLabs] Generating audio for:', message);
+    console.log("[ElevenLabs] Requesting audio for:", message.substring(0, 40));
 
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${elevenLabsConfig.voiceId}`,
       {
         method: "POST",
         headers: {
+          Accept: "audio/mpeg",
           "Content-Type": "application/json",
           "xi-api-key": elevenLabsConfig.apiKey,
         },
         body: JSON.stringify({
           text: message,
-          model_id: "eleven_monolingual_v1",
+          model_id: "eleven_flash_v2_5",
           voice_settings: {
-            stability: state === "red" ? 0.7 : 0.5,
-            similarity_boost: state === "red" ? 0.8 : 0.75,
+            stability: 0.5,
+            similarity_boost: 0.75,
           },
         }),
-      }
+      },
     );
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[ElevenLabs] API error:", response.status, errorText);
       throw new Error(`ElevenLabs API error: ${response.status}`);
     }
 
-    // Get audio data as base64
-    const audioBlob = await response.blob();
-    const reader = new FileReader();
-    
-    reader.onloadend = async () => {
-      const base64Audio = reader.result as string;
-      
-      // Create and play sound
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: base64Audio },
-        { shouldPlay: true, volume: 1.0 },
-        (status) => {
-          if (status.isLoaded && status.didJustFinish) {
-            sound.unloadAsync();
-          }
+    // Convert to array buffer and then to base64
+    const arrayBuffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64Audio = btoa(binary);
+    const audioUri = `data:audio/mpeg;base64,${base64Audio}`;
+
+    console.log("[ElevenLabs] Audio received, playing...");
+
+    // Create and play sound
+    const { sound } = await Audio.Sound.createAsync(
+      { uri: audioUri },
+      { shouldPlay: true, volume: 1.0 },
+    );
+
+    soundObject = sound;
+
+    // Auto-cleanup when done
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.isLoaded && status.didJustFinish) {
+        sound.unloadAsync().catch(() => {});
+        if (soundObject === sound) {
+          soundObject = null;
         }
-      );
-      
-      soundObject = sound;
-      console.log('[ElevenLabs] Playing natural voice audio');
-    };
-    
-    reader.readAsDataURL(audioBlob);
+      }
+    });
+
+    console.log("[ElevenLabs] Playing audio");
   } catch (error) {
-    console.error("ElevenLabs error, falling back to Expo Speech:", error);
+    console.error("[ElevenLabs] Error:", error);
     speakWithExpo(message, state);
   }
 }
@@ -230,11 +258,11 @@ export async function speakWithElevenLabs(
  */
 export async function speak(
   message: string,
-  options?: { rate?: number; pitch?: number }
+  options?: { rate?: number; pitch?: number },
 ): Promise<void> {
   // Skip if alerts-only mode is enabled (no navigation audio)
   if (alertsOnlyMode) {
-    console.log('[Speech] Skipped (alerts-only mode):', message);
+    console.log("[Speech] Skipped (alerts-only mode):", message);
     return;
   }
 
@@ -252,7 +280,7 @@ export async function speak(
  */
 export async function speakAlert(
   message: string,
-  options?: { rate?: number; pitch?: number }
+  options?: { rate?: number; pitch?: number },
 ): Promise<void> {
   await Speech.stop();
   Speech.speak(message, {
@@ -269,7 +297,7 @@ export async function speakHazardAlert(
   hazardType: string,
   location: string,
   action: string,
-  urgency: "critical" | "warning" | "info" = "warning"
+  urgency: "critical" | "warning" | "info" = "warning",
 ): Promise<void> {
   const message = `${hazardType} ${location}. ${action}`;
 
@@ -305,7 +333,7 @@ export async function speakHazardAlert(
 export async function speakProximityAlert(
   objectLabel: string,
   distance: "very close" | "close" | "moderate" | "far",
-  direction?: "ahead" | "left" | "right" | "center"
+  direction?: "ahead" | "left" | "right" | "center",
 ): Promise<void> {
   let message = "";
   let pitch = 1.0;
@@ -348,14 +376,14 @@ export async function speakProximityAlert(
  * More verbose than standard alerts
  */
 export async function speakSceneDescription(
-  objects: Array<{ label: string; size: string; location: string }>
+  objects: Array<{ label: string; size: string; location: string }>,
 ): Promise<void> {
   if (objects.length === 0) {
     await speak("No objects detected");
     return;
   }
 
-  let message = `${objects.length} object${objects.length > 1 ? 's' : ''} detected. `;
+  let message = `${objects.length} object${objects.length > 1 ? "s" : ""} detected. `;
 
   // Describe top 3 most important objects
   const topObjects = objects.slice(0, 3);
@@ -378,16 +406,19 @@ export async function speakSceneDescription(
 export async function stopSpeaking(): Promise<void> {
   // Stop Expo Speech
   await Speech.stop();
-  
+
   // Stop ElevenLabs audio if playing
   if (soundObject) {
     try {
-      await soundObject.stopAsync();
-      await soundObject.unloadAsync();
-      soundObject = null;
+      const status = await soundObject.getStatusAsync();
+      if (status.isLoaded) {
+        await soundObject.stopAsync();
+        await soundObject.unloadAsync();
+      }
     } catch (error) {
-      console.error('Error stopping ElevenLabs audio:', error);
+      // Ignore - sound may already be unloaded
     }
+    soundObject = null;
   }
 }
 
