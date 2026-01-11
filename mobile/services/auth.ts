@@ -156,8 +156,14 @@ export async function isAuthenticated(): Promise<boolean> {
       await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
       return false;
     }
-  } catch (error) {
-    console.error('Auth check error:', error);
+  } catch (error: any) {
+    // Network errors - backend is offline, treat as unauthenticated
+    if (error.message?.includes('Network request failed') || error.message?.includes('Failed to fetch')) {
+      console.log('[Auth] Backend offline, skipping auth check');
+      // Don't clear token - backend might come back online
+      return false;
+    }
+    console.log('[Auth] Auth check error (non-network):', error.message);
     return false;
   }
 }
@@ -188,8 +194,13 @@ export async function getCurrentUser(): Promise<User | null> {
     await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
     
     return user;
-  } catch (error) {
-    console.error('Get current user error:', error);
+  } catch (error: any) {
+    // Network errors - backend is offline, return null silently
+    if (error.message?.includes('Network request failed') || error.message?.includes('Failed to fetch')) {
+      console.log('[Auth] Backend offline, skipping user fetch');
+      return null;
+    }
+    console.log('[Auth] Get current user error (non-network):', error.message);
     return null;
   }
 }

@@ -48,8 +48,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setUser(null);
       }
-    } catch (error) {
-      console.error('Auth check error:', error);
+    } catch (error: any) {
+      // Gracefully handle network errors - don't show errors to user
+      if (error.message?.includes('Network request failed')) {
+        console.log('[Auth] Backend offline, continuing without auth');
+      } else {
+        console.error('Auth check error:', error);
+      }
       setIsAuth(false);
       setUser(null);
     } finally {

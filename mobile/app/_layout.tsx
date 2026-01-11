@@ -17,7 +17,7 @@ import { setAlertsOnlyMode, configureElevenLabs } from '../services/speech';
 export default function RootLayout() {
   const { alertSettings } = useAppStore();
 
-  // Initialize ElevenLabs if API key is available
+  // Initialize ElevenLabs if API key is available (run once on mount)
   useEffect(() => {
     const elevenLabsKey = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY;
     if (elevenLabsKey && alertSettings.voiceProvider === 'elevenlabs') {
@@ -25,7 +25,8 @@ export default function RootLayout() {
       configureElevenLabs(elevenLabsKey, '21m00Tcm4TlvDq8ikWAM');
       console.log('[Speech] ElevenLabs configured');
     }
-  }, [alertSettings.voiceProvider]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run only once on mount
 
   // Sync alertsOnlyAudio setting from store to speech service
   useEffect(() => {
