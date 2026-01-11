@@ -125,8 +125,8 @@ const defaultAlertSettings: AlertSettings = {
   alertLevel: "standard",
   positionCuesEnabled: true,
   shapeCuesEnabled: true,
-  voiceProvider: "expo-speech",
-  voiceId: null,
+  voiceProvider: "elevenlabs", // Use ElevenLabs for natural voice
+  voiceId: "21m00Tcm4TlvDq8ikWAM", // Rachel voice
   speechRate: 1.1,
   minConfidenceToAlert: 0.5,
   alertsOnlyAudio: true, // Default: only play audio for urgent color alerts

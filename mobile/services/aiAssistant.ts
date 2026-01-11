@@ -1,8 +1,7 @@
 /**
- * AI Assistant Service (Sierra)
+ * AI Assistant Service
  * 
- * Inspired by Saight project - provides intelligent scene understanding
- * and interactive Q&A using Gemini AI.
+ * Provides intelligent scene understanding and interactive Q&A using Gemini AI.
  * 
  * Features:
  * - Scene description and analysis
@@ -52,7 +51,7 @@ export async function analyzeScene(
   const colorProfile = getColorProfile(colorblindType);
   const problematicColors = colorProfile.problematicColors.join(', ');
   
-  const systemPrompt = `You are Sierra, an AI assistant helping a person with ${colorblindType === 'normal' ? 'normal vision' : colorblindType + ' color blindness'} navigate their environment safely.
+  const systemPrompt = `You are TrueLight, an AI assistant helping a person with ${colorblindType === 'normal' ? 'normal vision' : colorblindType + ' color blindness'} navigate their environment safely.
 
 ${colorblindType !== 'normal' ? `IMPORTANT: The user has difficulty seeing these colors: ${problematicColors}. Always explicitly describe any objects in these colors and provide alternative cues (position, shape, brightness).` : ''}
 
@@ -125,7 +124,7 @@ export async function askQuestion(
   
   const colorProfile = getColorProfile(colorblindType);
   
-  const systemPrompt = `You are Sierra, a helpful AI assistant for a person${colorblindType !== 'normal' ? ` with ${colorblindType} color blindness` : ''}. 
+  const systemPrompt = `You are TrueLight, a helpful AI assistant for a person${colorblindType !== 'normal' ? ` with ${colorblindType} color blindness` : ''}. 
 
 Answer questions concisely and clearly. If the question is about something visual${base64Image ? ' (you have an image)' : ' (no image provided)'}, describe what you see in a way that's helpful for the user.
 
@@ -278,9 +277,9 @@ function parseSceneAnalysis(text: string, processingTimeMs: number): SceneAnalys
  */
 export function getGreeting(): string {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning! Sierra here, ready to help you navigate.';
-  if (hour < 17) return 'Good afternoon! Sierra at your service.';
-  return 'Good evening! Sierra here to assist you.';
+  if (hour < 12) return 'Good morning! TrueLight here, ready to help you navigate.';
+  if (hour < 17) return 'Good afternoon! TrueLight at your service.';
+  return 'Good evening! TrueLight here to assist you.';
 }
 
 /**

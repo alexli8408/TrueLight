@@ -1,11 +1,10 @@
 /**
  * Voice Command Service
  * 
- * Inspired by Saight project - enables hands-free interaction
- * with the TrueLight assistant through voice commands.
+ * Enables hands-free interaction with the TrueLight assistant through voice commands.
  * 
  * Features:
- * - Wake word detection ("Hey TrueLight" or "Sierra")
+ * - Wake word detection ("Hey TrueLight")
  * - Natural language command parsing
  * - Integration with AI assistant for complex queries
  */
@@ -72,7 +71,7 @@ const COMMAND_PATTERNS: { pattern: RegExp; type: VoiceCommandType }[] = [
 ];
 
 // Wake words
-const WAKE_WORDS = ['hey truelight', 'truelight', 'hey sierra', 'sierra', 'okay truelight'];
+const WAKE_WORDS = ['hey truelight', 'truelight', 'okay truelight'];
 
 // Last spoken message for repeat functionality
 let lastSpokenMessage = '';

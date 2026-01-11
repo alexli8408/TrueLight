@@ -16,6 +16,7 @@
  */
 
 import * as Speech from "expo-speech";
+import { Audio } from 'expo-av';
 import {
   SignalState,
   ColorblindnessType,
@@ -53,6 +54,17 @@ interface ElevenLabsConfig {
 }
 
 let elevenLabsConfig: ElevenLabsConfig | null = null;
+
+// Audio player instance for ElevenLabs
+let soundObject: Audio.Sound | null = null;
+
+// Initialize audio mode
+Audio.setAudioModeAsync({
+  allowsRecordingIOS: false,
+  playsInSilentModeIOS: true,
+  staysActiveInBackground: false,
+  shouldDuckAndroid: true,
+});
 
 /**
  * Configure ElevenLabs for natural voice
@@ -144,12 +156,21 @@ export async function speakWithElevenLabs(
   state?: SignalState
 ): Promise<void> {
   if (!elevenLabsConfig) {
-    // Fallback to Expo Speech
+    // Fallback to Expo Speech if not configured
     speakWithExpo(message, state);
     return;
   }
 
   try {
+    // Stop any currently playing audio
+    if (soundObject) {
+      await soundObject.stopAsync();
+      await soundObject.unloadAsync();
+      soundObject = null;
+    }
+
+    console.log('[ElevenLabs] Generating audio for:', message);
+
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${elevenLabsConfig.voiceId}`,
       {
@@ -162,10 +183,8 @@ export async function speakWithElevenLabs(
           text: message,
           model_id: "eleven_monolingual_v1",
           voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-            // Adjust for urgency based on state
-            ...(state === "red" && { stability: 0.7, similarity_boost: 0.8 }),
+            stability: state === "red" ? 0.7 : 0.5,
+            similarity_boost: state === "red" ? 0.8 : 0.75,
           },
         }),
       }
@@ -175,10 +194,29 @@ export async function speakWithElevenLabs(
       throw new Error(`ElevenLabs API error: ${response.status}`);
     }
 
-    // For now, fall back to Expo Speech since we can't easily play audio buffers
-    // In a production app, you'd use expo-av to play the audio
-    console.log("ElevenLabs response received, using Expo Speech for playback");
-    speakWithExpo(message, state);
+    // Get audio data as base64
+    const audioBlob = await response.blob();
+    const reader = new FileReader();
+    
+    reader.onloadend = async () => {
+      const base64Audio = reader.result as string;
+      
+      // Create and play sound
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: base64Audio },
+        { shouldPlay: true, volume: 1.0 },
+        (status) => {
+          if (status.isLoaded && status.didJustFinish) {
+            sound.unloadAsync();
+          }
+        }
+      );
+      
+      soundObject = sound;
+      console.log('[ElevenLabs] Playing natural voice audio');
+    };
+    
+    reader.readAsDataURL(audioBlob);
   } catch (error) {
     console.error("ElevenLabs error, falling back to Expo Speech:", error);
     speakWithExpo(message, state);
@@ -338,7 +376,19 @@ export async function speakSceneDescription(
  * Stops any current speech
  */
 export async function stopSpeaking(): Promise<void> {
+  // Stop Expo Speech
   await Speech.stop();
+  
+  // Stop ElevenLabs audio if playing
+  if (soundObject) {
+    try {
+      await soundObject.stopAsync();
+      await soundObject.unloadAsync();
+      soundObject = null;
+    } catch (error) {
+      console.error('Error stopping ElevenLabs audio:', error);
+    }
+  }
 }
 
 /**

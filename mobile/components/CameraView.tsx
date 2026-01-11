@@ -149,7 +149,7 @@ export const CameraViewComponent = forwardRef<CameraViewHandle, Props>(function 
   }, [isListening, pulseAnim]);
 
   // Handle AI assistant button press
-  const handleAskSierra = useCallback(async () => {
+  const handleAskAssistant = useCallback(async () => {
     if (!lastFrameBase64) {
       speak("I need to see something first. Please point the camera at what you want me to describe.");
       return;
@@ -730,6 +730,17 @@ export const CameraViewComponent = forwardRef<CameraViewHandle, Props>(function 
             <Text style={styles.sceneDescriptionText}>Describe Scene</Text>
           </Pressable>
         )}
+
+        {/* AI Assistant button */}
+        <Pressable
+          style={styles.aiAssistantButton}
+          onPress={handleAskAssistant}
+          accessibilityRole="button"
+          accessibilityLabel="Ask AI assistant"
+        >
+          <Text style={styles.aiAssistantIcon}>🤖</Text>
+          <Text style={styles.aiAssistantText}>Ask AI</Text>
+        </Pressable>
       </ExpoCameraView>
 
       {/* Lock-on status indicator */}
@@ -951,6 +962,28 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   sceneDescriptionText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  aiAssistantButton: {
+    position: "absolute",
+    bottom: 200,
+    right: 20,
+    backgroundColor: "rgba(76, 175, 80, 0.9)",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+  },
+  aiAssistantIcon: {
+    fontSize: 18,
+  },
+  aiAssistantText: {
     color: "#fff",
     fontSize: 14,
     fontWeight: "600",
