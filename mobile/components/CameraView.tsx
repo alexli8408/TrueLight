@@ -270,9 +270,10 @@ export const CameraViewComponent = forwardRef<CameraViewHandle, Props>(
         console.log("[CameraView] 📸 Taking snapshot...");
         const photo = await cameraRef.current.takePictureAsync({
           base64: true,
-          quality: 0.5, // Fast capture for high FPS
+          quality: 0.5,
           skipProcessing: true,
           shutterSound: false,
+          animateShutter: false,
         });
 
         if (!photo?.base64) {
