@@ -215,44 +215,32 @@ export function CameraViewComponent({
         frameNumberRef.current++;
         const trackedObjects = updateMotionTracking(result.detectedObjects, frameNumberRef.current);
         setDetectedObjects(trackedObjects);
+        
+        // VOICE ALERTS: Only speak for objects with problematic colors
+        // This is the ONLY place voice alerts should trigger in the app
+        const problematicObjects = result.detectedObjects.filter(
+          obj => obj.isProblematicColor && obj.alertPriority !== 'none'
+        );
+        
+        if (problematicObjects.length > 0 && result.confidence >= alertSettings.minConfidenceToAlert) {
+          // Generate alert message for problematic colors
+          const alertMessage = generateColorAlert(problematicObjects);
+          
+          try {
+            // Use ElevenLabs for more natural voice
+            await speakWithElevenLabs(alertMessage);
+          } catch (e) {
+            // Fallback to regular speech
+            console.warn("ElevenLabs failed, using fallback:", e);
+            speak(alertMessage);
+          }
+        }
       } else {
         setDetectedObjects([]);
       }
 
       // Notify parent component
       onDetection?.(result.state, result.confidence);
-
-      // Speak the result if confidence is high enough
-      if (result.confidence >= alertSettings.minConfidenceToAlert) {
-        // Check if any detected objects are problematic colors for this user
-        const problematicObjects = result.detectedObjects?.filter(
-          obj => obj.isProblematicColor
-        ) || [];
-        
-        // Use ElevenLabs for color-related alerts if enabled in profile
-        if (colorProfile.useElevenLabs && problematicObjects.length > 0) {
-          // Generate descriptive alert for problematic colors
-          const alertMessage = generateColorAlert(problematicObjects, result.state);
-          try {
-            await speakWithElevenLabs(alertMessage);
-          } catch (e) {
-            // Fallback to regular speech if ElevenLabs fails
-            console.warn("ElevenLabs failed, falling back to regular speech:", e);
-            await speakSignalState(
-              result.state,
-              colorblindType as any,
-              alertSettings.positionCuesEnabled
-            );
-          }
-        } else {
-          // Use regular speech for non-problematic colors
-          await speakSignalState(
-            result.state,
-            colorblindType as any,
-            alertSettings.positionCuesEnabled
-          );
-        }
-      }
     } catch (error) {
       console.error("Capture error:", error);
       onError?.(error instanceof Error ? error.message : "Detection failed");
@@ -270,54 +258,50 @@ export function CameraViewComponent({
     alertSettings.positionCuesEnabled,
   ]);
   
-  // Generate descriptive alert for any detected object with problematic colors
-  const generateColorAlert = (objects: DetectedObject[], state: SignalState): string => {
-    const highPriorityObjects = objects.filter(obj => obj.alertPriority === "high" || obj.alertPriority === "critical");
+  // Generate descriptive alert for objects with problematic colors
+  const generateColorAlert = (objects: DetectedObject[]): string => {
+    // Sort by priority - critical first
+    const sorted = objects.sort((a, b) => {
+      const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3, none: 4 };
+      return (priorityOrder[a.alertPriority] || 4) - (priorityOrder[b.alertPriority] || 4);
+    });
     
-    if (highPriorityObjects.length === 0) {
-      // Default message based on traffic light state
-      switch (state) {
-        case "red":
-          return "Red signal ahead. Stop.";
-        case "yellow":
-          return "Yellow signal. Prepare to stop.";
-        case "green":
-          return "Green signal. You may proceed.";
-        default:
-          return "Signal detected.";
+    const topObject = sorted[0];
+    
+    // Use color warning if available, otherwise generate from label and colors
+    if (topObject.colorWarning) {
+      return topObject.colorWarning;
+    }
+    
+    // Generate alert based on detected colors
+    const colors = topObject.colors?.join(', ') || 'colored';
+    const label = topObject.label || topObject.class || 'object';
+    
+    // Specific alerts for known objects
+    if (label.toLowerCase().includes('traffic light') || label.toLowerCase().includes('signal')) {
+      const color = topObject.colors?.[0] || 'unknown';
+      if (color.toLowerCase().includes('red')) {
+        return "Red traffic light ahead. Stop.";
+      } else if (color.toLowerCase().includes('yellow')) {
+        return "Yellow light. Prepare to stop.";
+      } else if (color.toLowerCase().includes('green')) {
+        return "Green light. You may go.";
       }
     }
     
-    // Find the matching detectable object for better messages
-    const alertMessages: string[] = [];
+    if (label.toLowerCase().includes('stop sign')) {
+      return "Stop sign ahead. Come to a complete stop.";
+    }
     
-    for (const obj of highPriorityObjects) {
-      // Look up the object in our DETECTABLE_OBJECTS for proper messaging
-      const detectedObjInfo = DETECTABLE_OBJECTS.find(
-        d => d.name.toLowerCase() === obj.label.toLowerCase() || 
-             d.id === obj.label.toLowerCase().replace(/\s+/g, '_')
-      );
-      
-      if (detectedObjInfo) {
-        // Use the predefined alert message and action
-        alertMessages.push(
-          `${detectedObjInfo.alertMessage}. ${detectedObjInfo.actionRequired || ''}`
-        );
-      } else {
-        // Fallback for unknown objects
-        alertMessages.push(`${obj.label} detected ahead.`);
+    if (label.toLowerCase().includes('car') || label.toLowerCase().includes('vehicle')) {
+      const color = topObject.colors?.[0] || '';
+      if (color.toLowerCase().includes('red')) {
+        return "Brake lights ahead. Slow down.";
       }
     }
     
-    // Combine messages, prioritizing critical ones
-    if (alertMessages.length === 1) {
-      return alertMessages[0];
-    } else if (alertMessages.length > 1) {
-      // Multiple objects - announce the most critical one
-      return `Warning! Multiple hazards. ${alertMessages[0]}`;
-    }
-    
-    return "Hazard detected ahead.";
+    // Generic alert for other objects
+    return `${colors} ${label} detected ahead.`;
   };
 
   // Start/stop capture interval
@@ -358,7 +342,7 @@ export function CameraViewComponent({
       case "green":
         return "GREEN";
       default:
-        return "SCANNING";
+        return ""; // No label when not detecting a signal
     }
   };
 
@@ -432,36 +416,30 @@ export function CameraViewComponent({
           containerHeight={screenDimensions.height}
         />
         
-        {/* Status overlay at top */}
-        <View style={styles.statusOverlay}>
-          {/* State indicator with optional shape */}
-          <View style={styles.stateRow}>
-            {getShapeIndicator()}
-            <View
-              style={[styles.stateIndicator, { backgroundColor: stateColor }]}
-            >
-              <Text style={styles.stateText}>{getStateLabel()}</Text>
+        {/* Minimal HUD overlay - only show when signal detected */}
+        {currentState !== "unknown" && (
+          <View style={styles.hudOverlay}>
+            <View style={styles.hudRow}>
+              {getShapeIndicator()}
+              <View
+                style={[styles.hudSignal, { backgroundColor: stateColor }]}
+              >
+                <Text style={styles.hudSignalText}>{getStateLabel()}</Text>
+              </View>
             </View>
           </View>
+        )}
 
-          {/* Action description */}
-          {currentState !== "unknown" && (
-            <View style={[styles.actionBar, { borderColor: stateColor }]}>
-              <Text style={styles.actionText}>{getActionText()}</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Processing indicator */}
+        {/* Processing indicator - top right dot */}
         {isProcessing && (
           <View style={styles.processingIndicator}>
             <View
-              style={[styles.processingDot, { backgroundColor: stateColor }]}
+              style={[styles.processingDot, { backgroundColor: COLORS.accent }]}
             />
           </View>
         )}
 
-        {/* Confidence indicator */}
+        {/* Confidence bar - subtle at bottom */}
         {currentState !== "unknown" && (
           <View style={styles.confidenceBar}>
             <View
@@ -476,11 +454,11 @@ export function CameraViewComponent({
           </View>
         )}
         
-        {/* Detected objects count indicator */}
+        {/* Object count - minimal badge */}
         {detectedObjects.length > 0 && (
           <View style={styles.objectCountBadge}>
             <Text style={styles.objectCountText}>
-              {detectedObjects.length} object{detectedObjects.length !== 1 ? 's' : ''} detected
+              {detectedObjects.length}
             </Text>
           </View>
         )}
@@ -499,9 +477,8 @@ export function CameraViewComponent({
         )}
       </ExpoCameraView>
 
-      {/* Control buttons */}
+      {/* Control buttons - minimal */}
       <View style={styles.controlOverlay}>
-        {/* Pause/Resume button */}
         <Pressable
           style={[
             styles.controlButton,
@@ -518,40 +495,6 @@ export function CameraViewComponent({
           </Text>
         </Pressable>
       </View>
-      
-      {/* Right side controls - AI Assistant */}
-      <View style={styles.rightControlOverlay}>
-        {/* Quick signal check button */}
-        <Pressable
-          style={styles.quickCheckButton}
-          onPress={handleQuickCheck}
-          accessibilityRole="button"
-          accessibilityLabel="Quick signal check"
-        >
-          <Text style={styles.quickCheckText}>🚦</Text>
-        </Pressable>
-        
-        {/* AI Assistant button */}
-        <Animated.View style={{ transform: [{ scale: isListening ? pulseAnim : 1 }] }}>
-          <Pressable
-            style={[
-              styles.aiButton,
-              isListening && styles.aiButtonActive,
-            ]}
-            onPress={handleAskSierra}
-            onLongPress={() => {
-              setIsListening(true);
-              speak("Hi! I'm Sierra. How can I help you?");
-            }}
-            onPressOut={() => setIsListening(false)}
-            accessibilityRole="button"
-            accessibilityLabel="Ask Sierra AI assistant"
-            accessibilityHint="Tap to describe scene, hold for voice commands"
-          >
-            <Text style={styles.aiButtonText}>🎙️</Text>
-          </Pressable>
-        </Animated.View>
-      </View>
     </View>
   );
 }
@@ -564,91 +507,68 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
   },
-  statusOverlay: {
+  // Minimal HUD overlay
+  hudOverlay: {
     position: "absolute",
-    top: 0,
+    top: 60,
     left: 0,
     right: 0,
-    paddingTop: 60,
-    paddingHorizontal: SIZES.spacingMedium,
-    paddingBottom: SIZES.spacingMedium,
+    alignItems: "center",
   },
-  stateRow: {
+  hudRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
     gap: SIZES.spacingSmall,
-    marginBottom: SIZES.spacingSmall,
   },
-  stateIndicator: {
-    paddingHorizontal: SIZES.spacingLarge * 2,
-    paddingVertical: SIZES.spacingMedium,
-    borderRadius: SIZES.borderRadius,
+  hudSignal: {
+    paddingHorizontal: 24,
+    paddingVertical: 8,
   },
-  stateText: {
-    color: COLORS.background,
-    fontSize: SIZES.textXL,
-    fontWeight: "bold",
-    letterSpacing: 4,
-    textAlign: "center",
+  hudSignalText: {
+    color: "#000",
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: 2,
   },
   // Shape indicators for colorblind users
   shapeSquare: {
-    width: 32,
-    height: 32,
-    borderRadius: 4,
+    width: 24,
+    height: 24,
   },
   shapeCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
   },
   shapeTriangle: {
     width: 0,
     height: 0,
     backgroundColor: "transparent",
-    borderLeftWidth: 16,
-    borderRightWidth: 16,
-    borderBottomWidth: 32,
+    borderLeftWidth: 12,
+    borderRightWidth: 12,
+    borderBottomWidth: 24,
     borderLeftColor: "transparent",
     borderRightColor: "transparent",
   },
-  actionBar: {
-    backgroundColor: "rgba(0, 0, 0, 0.8)",
-    paddingVertical: SIZES.spacingMedium,
-    paddingHorizontal: SIZES.spacingLarge,
-    borderRadius: SIZES.borderRadius,
-    borderWidth: 2,
-  },
-  actionText: {
-    color: COLORS.textPrimary,
-    fontSize: SIZES.textMedium,
-    textAlign: "center",
-    fontWeight: "500",
-  },
   processingIndicator: {
     position: "absolute",
-    top: 16,
-    right: 16,
+    top: 20,
+    right: 20,
   },
   processingDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    opacity: 0.9,
+    width: 8,
+    height: 8,
   },
   confidenceBar: {
     position: "absolute",
-    bottom: 80,
-    left: SIZES.spacingLarge,
-    right: SIZES.spacingLarge,
-    height: 4,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    borderRadius: 2,
+    bottom: 60,
+    left: 20,
+    right: 20,
+    height: 2,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
   },
   confidenceFill: {
     height: "100%",
-    borderRadius: 2,
   },
   controlOverlay: {
     position: "absolute",
@@ -656,34 +576,34 @@ const styles = StyleSheet.create({
     left: 20,
   },
   controlButton: {
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
   controlButtonPaused: {
-    backgroundColor: COLORS.green,
+    backgroundColor: COLORS.accent,
   },
   controlButtonText: {
     color: COLORS.textPrimary,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "bold",
   },
   objectCountBadge: {
     position: "absolute",
-    bottom: 100,
-    alignSelf: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    bottom: 80,
+    right: 20,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: COLORS.accent,
   },
   objectCountText: {
-    color: COLORS.textPrimary,
-    fontSize: 12,
-    fontWeight: "500",
+    color: COLORS.accent,
+    fontSize: 14,
+    fontWeight: "700",
   },
   message: {
     color: COLORS.textPrimary,
@@ -695,63 +615,24 @@ const styles = StyleSheet.create({
   },
   permissionButton: {
     alignSelf: "center",
-    backgroundColor: COLORS.green,
+    backgroundColor: COLORS.accent,
     paddingHorizontal: SIZES.spacingLarge,
     paddingVertical: SIZES.buttonPadding,
-    borderRadius: SIZES.borderRadius,
   },
   permissionButtonText: {
-    color: COLORS.textPrimary,
+    color: "#000",
     fontSize: SIZES.textMedium,
     fontWeight: "bold",
   },
-  // AI Assistant styles
-  rightControlOverlay: {
-    position: "absolute",
-    bottom: 20,
-    right: 20,
-    gap: 12,
-  },
-  aiButton: {
-    backgroundColor: "rgba(80, 80, 200, 0.8)",
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  aiButtonActive: {
-    backgroundColor: "rgba(200, 80, 80, 0.9)",
-  },
-  aiButtonText: {
-    fontSize: 24,
-  },
-  quickCheckButton: {
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  quickCheckText: {
-    fontSize: 20,
-  },
   aiResponseOverlay: {
     position: "absolute",
-    bottom: 140,
+    bottom: 100,
     left: 20,
     right: 20,
     backgroundColor: "rgba(0, 0, 0, 0.85)",
     padding: 16,
-    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(100, 100, 200, 0.5)",
+    borderColor: COLORS.border,
   },
   aiResponseText: {
     color: COLORS.textPrimary,

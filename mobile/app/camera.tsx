@@ -1,8 +1,9 @@
 /**
- * Camera Detection Screen
+ * Camera Detection Screen - DASHCAM MODE
  *
  * The main screen where traffic signal detection happens.
  * Uses the camera to capture frames and analyzes them for traffic signals.
+ * Always runs in LANDSCAPE mode for dashcam functionality.
  *
  * ACCESSIBILITY:
  * - Full-screen camera for easy aiming
@@ -22,11 +23,12 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { COLORS, SIZES, ColorblindnessType } from "../constants/accessibility";
 import { CameraViewComponent } from "../components/CameraView";
 import { getColorblindType } from "../services/storage";
 import { speak, stopSpeaking } from "../services/speech";
-import { checkHealth, API_BASE_URL } from "../services/api";
+import { checkDetectionHealth, API_BASE_URL } from "../services/api";
 
 export default function CameraScreen() {
   const router = useRouter();
@@ -36,6 +38,14 @@ export default function CameraScreen() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Force landscape mode for dashcam
+    const lockLandscape = async () => {
+      await ScreenOrientation.lockAsync(
+        ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT
+      );
+    };
+    lockLandscape();
+
     // Load user's colorblind type
     setColorblindType(getColorblindType());
 
@@ -43,18 +53,24 @@ export default function CameraScreen() {
     checkBackendConnection();
 
     // Announce screen
-    speak("Camera ready. Point at a traffic signal.");
+    speak("Dashcam ready.");
 
     return () => {
+      // Restore portrait when leaving
+      ScreenOrientation.lockAsync(
+        ScreenOrientation.OrientationLock.PORTRAIT_UP
+      );
       stopSpeaking();
     };
   }, []);
 
   const checkBackendConnection = async () => {
-    const healthy = await checkHealth();
-    setIsConnected(healthy);
-    if (!healthy) {
-      setError(`Cannot connect to server at ${API_BASE_URL}`);
+    const health = await checkDetectionHealth();
+    // Connected if any detection method works
+    const anyHealthy = health.backend || health.python || health.roboflow;
+    setIsConnected(anyHealthy);
+    if (!anyHealthy) {
+      setError(`Detection services unavailable`);
     }
   };
 
@@ -123,7 +139,7 @@ export default function CameraScreen() {
           contentContainerStyle={styles.loadingScrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.loadingText}>Connecting to server...</Text>
+          <Text style={styles.loadingText}>Initializing dashcam...</Text>
         </ScrollView>
       </SafeAreaView>
     );
@@ -176,10 +192,9 @@ const styles = StyleSheet.create({
     padding: SIZES.spacingMedium,
   },
   settingsButton: {
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     width: 44,
     height: 44,
-    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -222,14 +237,13 @@ const styles = StyleSheet.create({
     marginBottom: SIZES.spacingLarge,
   },
   retryButton: {
-    backgroundColor: COLORS.green,
+    backgroundColor: COLORS.accent,
     paddingHorizontal: SIZES.spacingLarge * 2,
     paddingVertical: SIZES.buttonPadding,
-    borderRadius: SIZES.borderRadius,
     marginBottom: SIZES.spacingMedium,
   },
   retryButtonText: {
-    color: COLORS.background,
+    color: "#000",
     fontSize: SIZES.textMedium,
     fontWeight: "bold",
   },
@@ -247,7 +261,6 @@ const styles = StyleSheet.create({
     right: SIZES.spacingMedium,
     backgroundColor: "rgba(255, 59, 48, 0.9)",
     padding: SIZES.spacingMedium,
-    borderRadius: SIZES.borderRadius,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",

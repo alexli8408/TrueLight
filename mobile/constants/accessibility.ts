@@ -1,29 +1,37 @@
 /**
  * Accessibility Constants
  *
- * Minimalist design inspired by tomalmog.com and claudetempo.vercel.app
- * Clean white backgrounds, dark text, generous spacing
+ * Dark mode design - clean, minimal, no gradients
+ * Sharp corners, white text on dark backgrounds
  */
 
 export const COLORS = {
-  // Background - clean white/light gray
-  background: "#FAFBFC",
-  backgroundSecondary: "#F3F4F6",
+  // Background - dark mode
+  background: "#0A0A0B",
+  backgroundSecondary: "#121214",
+  backgroundTertiary: "#1A1A1E",
 
   // Signal state colors - only used when displaying detection results
   red: "#EF4444",
   yellow: "#F59E0B",
   green: "#10B981",
-  unknown: "#9CA3AF",
+  orange: "#FF6B35",
+  unknown: "#6B7280",
 
-  // Text - dark for readability
-  textPrimary: "#1A1A1A",
-  textSecondary: "#6B7280",
+  // Text - white/light for dark mode
+  textPrimary: "#FFFFFF",
+  textSecondary: "#A0A0A8",
+  textMuted: "#6B6B73",
 
   // UI elements
-  border: "#E5E7EB",
-  buttonBackground: "#1A1A1A",
-  buttonText: "#FFFFFF",
+  border: "#2A2A30",
+  borderLight: "#3A3A42",
+  buttonBackground: "#FFFFFF",
+  buttonText: "#0A0A0B",
+
+  // Accent - orange only, no purple/blue
+  accent: "#FF6B35",
+  accentDim: "rgba(255, 107, 53, 0.2)",
 };
 
 export const SIZES = {
@@ -42,8 +50,8 @@ export const SIZES = {
   spacingMedium: 16,
   spacingSmall: 8,
 
-  // Border radius - subtle
-  borderRadius: 12,
+  // Border radius - sharp corners, no rounding
+  borderRadius: 0,
 };
 
 export const TIMING = {

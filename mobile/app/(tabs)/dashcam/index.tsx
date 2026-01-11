@@ -83,6 +83,22 @@ export default function DashcamScreen() {
     };
   }, [transportSettings.autoDetectMode]);
 
+  // Force landscape mode for dashcam
+  useEffect(() => {
+    const lockLandscape = async () => {
+      await ScreenOrientation.lockAsync(
+        ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT
+      );
+      setIsLandscape(true);
+    };
+    lockLandscape();
+
+    return () => {
+      // Optionally restore portrait when leaving (or leave locked for dashcam mode)
+      // ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    };
+  }, []);
+
   // Check backend connection
   useEffect(() => {
     checkBackendConnection();
@@ -90,34 +106,6 @@ export default function DashcamScreen() {
 
     return () => {
       stopSpeaking();
-    };
-  }, []);
-
-  // Handle orientation changes
-  useEffect(() => {
-    const checkOrientation = async () => {
-      const orientation = await ScreenOrientation.getOrientationAsync();
-      setIsLandscape(
-        orientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
-          orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT
-      );
-    };
-
-    checkOrientation();
-
-    const subscription = ScreenOrientation.addOrientationChangeListener(
-      (event) => {
-        setIsLandscape(
-          event.orientationInfo.orientation ===
-            ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
-            event.orientationInfo.orientation ===
-              ScreenOrientation.Orientation.LANDSCAPE_RIGHT
-        );
-      }
-    );
-
-    return () => {
-      ScreenOrientation.removeOrientationChangeListener(subscription);
     };
   }, []);
 

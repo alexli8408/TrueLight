@@ -537,3 +537,11 @@ export async function checkDetectionHealth(): Promise<{
   
   return results;
 }
+
+/**
+ * Legacy health check function (alias)
+ */
+export async function checkHealth(): Promise<boolean> {
+  const health = await checkDetectionHealth();
+  return health.backend || health.python || health.roboflow;
+}

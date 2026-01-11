@@ -1,0 +1,8 @@
+nohup: ignoring input
+INFO:     Started server process [176768]
+INFO:     Waiting for application startup.
+INFO:main:Loading YOLO model...
+INFO:detector:YOLO model loaded successfully
+INFO:main:Detection service ready
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)

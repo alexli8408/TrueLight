@@ -216,13 +216,11 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 4,
     backgroundColor: COLORS.border,
-    borderRadius: 2,
     overflow: "hidden",
   },
   progressFill: {
     height: "100%",
-    backgroundColor: COLORS.textPrimary,
-    borderRadius: 2,
+    backgroundColor: COLORS.accent,
   },
   question: {
     fontSize: SIZES.textLarge,
@@ -241,7 +239,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.backgroundSecondary,
     paddingVertical: SIZES.buttonPadding,
     paddingHorizontal: SIZES.spacingLarge,
-    borderRadius: SIZES.borderRadius,
     borderWidth: 1,
     borderColor: COLORS.border,
     alignItems: "center",
@@ -266,9 +263,10 @@ const styles = StyleSheet.create({
   },
   resultCard: {
     backgroundColor: COLORS.backgroundSecondary,
-    borderRadius: SIZES.borderRadius,
     padding: SIZES.spacingLarge,
     marginBottom: SIZES.spacingLarge,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   resultLabel: {
     fontSize: SIZES.textSmall,
@@ -294,14 +292,13 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   primaryButton: {
-    backgroundColor: COLORS.buttonBackground,
+    backgroundColor: COLORS.accent,
     paddingVertical: SIZES.buttonPadding,
     paddingHorizontal: SIZES.spacingLarge,
-    borderRadius: SIZES.borderRadius,
     alignItems: "center",
   },
   primaryButtonText: {
-    color: COLORS.buttonText,
+    color: "#000",
     fontSize: SIZES.textMedium,
     fontWeight: "600",
   },

@@ -39,6 +39,13 @@ export default function RootLayout() {
             headerShown: false,
           }}
         />
+        <Stack.Screen
+          name="home"
+          options={{
+            title: 'True Light',
+            headerShown: false,
+          }}
+        />
           <Stack.Screen
             name="login"
             options={{
@@ -65,7 +72,7 @@ export default function RootLayout() {
         <Stack.Screen
           name="camera"
           options={{
-            title: 'True Light',
+            title: 'Dashcam',
             headerShown: false,
           }}
         />
