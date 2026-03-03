@@ -20,7 +20,7 @@ The division of labor is strict:
 
 ```mermaid
 graph TD
-    subgraph Mobile Device (iOS/Android)
+    subgraph MobileDevice [Mobile Device iOS / Android]
         App[React Native App<br/>Expo Managed Workflow]
         Cam[Camera System<br/>expo-camera]
         BBox[Coordinate Translator<br/>BoundingBoxOverlay]
@@ -31,7 +31,7 @@ graph TD
         App -->|Fires Asynchronous Voice| Audio
     end
 
-    subgraph Backend Server (Vercel/Node.js)
+    subgraph BackendServer [Backend Server Vercel / Node.js]
         API[Next.js API Gateway<br/>Edge Functions]
         HealthPoller[Status Checker]
         Auth[NextAuth/Session state]
@@ -40,7 +40,7 @@ graph TD
         API -.-> HealthPoller
     end
 
-    subgraph Compute Node (EC2/Localhost)
+    subgraph ComputeNode [Compute Node EC2 / Localhost]
         Python[Python Microservice<br/>FastAPI]
         YOLO[YOLOv3-tiny<br/>cv2.dnn]
         CV2[OpenCV Color Analyzer<br/>HSV Masks]
@@ -51,8 +51,8 @@ graph TD
         Python --> Heuristics
     end
 
-    App <-->|JSON + Base64 Image (REST)| API
-    API <-->|JSON + Base64 Image (REST)| Python
+    App <-->|JSON + Base64 Image REST| API
+    API <-->|JSON + Base64 Image REST| Python
 ```
 
 ---
@@ -72,22 +72,22 @@ classDiagram
     class main {
         FastAPI App
         +POST /detect
-        +decode_base64_image(str) -> np.ndarray
-        +determine_priority(label, is_problematic, cb_type, area) -> str
+        +decode_base64_image(str) np_ndarray
+        +determine_priority(label, is_problematic, cb_type, area) str
     }
     class detector {
         ObjectDetector
         +net: cv2.dnn.Net
-        +detect(frame, confidence) -> List[Dict]
-        +detect_color_regions(frame, min_area) -> List[Dict]
+        +detect(frame, confidence) list
+        +detect_color_regions(frame, min_area) list
         -_ensure_model_files()
     }
     class color_analyzer {
         ColorAnalyzer
-        +COLOR_RANGES: Dict[str, Tuple]
-        +detect_colors(roi) -> Dict[str, float]
-        +is_problematic_for_user(colors, type) -> Tuple[bool, str]
-        +analyze_region(roi, type) -> Dict
+        +COLOR_RANGES: dict
+        +detect_colors(roi) dict
+        +is_problematic_for_user(colors, type) tuple
+        +analyze_region(roi, type) dict
     }
 
     main --> detector : uses for bounding boxes
