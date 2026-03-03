@@ -192,12 +192,9 @@ sequenceDiagram
     Backend-->>Mobile: Forwards JSON Response
 
     Mobile->>Mobile: Process Alert Priorities
-    par Asynchronous UI Work
-        Mobile->>Mobile: Math Coordinate Translation
-        Mobile->>Mobile: Draw BoundingBoxes on UI Main Thread
-    and Asynchronous Audio
-        Mobile->>Mobile: Trigger TTS "Red Car ahead" (Debounced)
-    end
+    Mobile-)Mobile: Async Math Coordinate Translation
+    Mobile-)Mobile: Draw BoundingBoxes on UI Main Thread
+    Mobile-)Mobile: Trigger TTS "Red Car ahead" (Debounced)
 ```
 
 ### 5. Advanced Heuristics and Edge Cases
